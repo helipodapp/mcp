@@ -1,0 +1,11 @@
+{
+  "name": "helipod",
+  "owner": { "name": "Helipod", "url": "https://helipod.io" },
+  "plugins": [
+    {
+      "name": "helipod",
+      "source": "./",
+      "description": "Helipod MCP server and skills: containers, VPS, domains, email and AI gateway."
+    }
+  ]
+}

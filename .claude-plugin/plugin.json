@@ -1,0 +1,9 @@
+{
+  "name": "helipod",
+  "version": "0.1.0",
+  "description": "Deploy apps, run VPS servers, buy domains, send email and use the AI gateway on Helipod from Claude Code.",
+  "author": { "name": "Helipod", "url": "https://helipod.io" },
+  "homepage": "https://docs.helipod.io",
+  "license": "MIT",
+  "keywords": ["helipod", "deploy", "vps", "domains", "email", "ai-gateway"]
+}
