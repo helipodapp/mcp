@@ -3,17 +3,36 @@
   "version": "0.1.0",
   "description": "MCP server for Helipod: containers, VPS, domains and email from Claude Code, Codex, Cursor and other AI tools.",
   "type": "module",
-  "bin": { "helipod-mcp": "dist/stdio.js" },
-  "exports": { ".": "./dist/index.js", "./http": "./dist/http.js" },
-  "files": ["dist", "skills", "README.md"],
+  "bin": {
+    "helipod-mcp": "dist/stdio.js"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./http": "./dist/http.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md"
+  ],
   "scripts": {
     "build": "bun build src/stdio.ts --target node --outfile dist/stdio.js && bun build src/index.ts --target node --outfile dist/index.js && bun build src/http.ts --target node --outfile dist/http.js && chmod +x dist/stdio.js",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
-  "keywords": ["mcp", "helipod", "model-context-protocol", "claude", "codex", "cursor", "deploy"],
+  "keywords": [
+    "mcp",
+    "helipod",
+    "model-context-protocol",
+    "claude",
+    "codex",
+    "cursor",
+    "deploy"
+  ],
   "license": "MIT",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "zod": "^4.6.7"
@@ -21,5 +40,13 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/helipodapp/mcp.git"
+  },
+  "homepage": "https://docs.helipod.io/docs/helipod/ai-agents",
+  "bugs": {
+    "url": "https://github.com/helipodapp/mcp/issues"
   }
 }

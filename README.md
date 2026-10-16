@@ -23,7 +23,7 @@ Start with a key limited to one project while you try things out.
 ### Claude Code (plugin: MCP server + skills)
 
 ```sh
-/plugin marketplace add https://gitlab.com/leoanangmh/helipod-mcp.git
+/plugin marketplace add helipodapp/mcp
 /plugin install helipod@helipod
 ```
 
