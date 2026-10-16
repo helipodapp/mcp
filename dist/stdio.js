@@ -35691,7 +35691,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.1.0";
+var VERSION = "0.1.1";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids.
 - Anything that costs money (create/deploy/scale services, create/renew/upgrade VPS, register/renew/transfer domains): run the dryRun or price lookup first, tell the user the cost in IDR and wait for an explicit yes.

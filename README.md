@@ -5,6 +5,8 @@ Use [Helipod](https://helipod.io) from AI coding tools: deploy apps and database
 - **MCP server** (`helipod-mcp`): 70 tools over the Container, VPS, Domain and Email APIs. Works in Claude Code, Codex, Cursor, VS Code, Windsurf, Claude Desktop and any MCP client.
 - **Skills** (`skills/`): step-by-step playbooks so the agent deploys, prices and confirms the way Helipod expects (price first, confirm before deleting, read build logs on failure).
 
+Step-by-step guides for each tool (Claude Code, Codex, Cursor, VS Code, Gemini CLI, opencode, Windsurf, Claude Desktop, Cline and others): **https://docs.helipod.io/docs/helipod/ai-agents**
+
 ## 1. Get a key
 
 In the [dashboard](https://helipod.io/project) open a project, then **Settings → API keys**. Choose the products (Container API, VPS API, Domain API) and the reach (one project, or the whole account; the Domain API needs a whole-account key). The key starts with `hel_`.
