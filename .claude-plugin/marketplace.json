@@ -1,6 +1,10 @@
 {
   "name": "helipod",
-  "owner": { "name": "Helipod", "url": "https://helipod.io" },
+  "description": "Helipod tools for AI coding agents: deploy apps, VPS, domains, email and AI gateway.",
+  "owner": {
+    "name": "Helipod",
+    "url": "https://helipod.io"
+  },
   "plugins": [
     {
       "name": "helipod",
