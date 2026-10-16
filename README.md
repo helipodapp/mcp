@@ -20,6 +20,8 @@ Start with a key limited to one project while you try things out.
 
 ## 2. Connect your tool
 
+The server runs with `npx -y github:helipodapp/mcp` (Node.js 18 or newer). Every config below starts it that way and passes `HELIPOD_API_KEY` from your environment.
+
 ### Claude Code (plugin: MCP server + skills)
 
 ```sh
@@ -27,14 +29,10 @@ Start with a key limited to one project while you try things out.
 /plugin install helipod@mcp
 ```
 
-The plugin reads `HELIPOD_API_KEY` and `HELIPOD_EMAIL_API_KEY` from your environment.
-
 MCP server only:
 
 ```sh
-claude mcp add helipod --env HELIPOD_API_KEY=$HELIPOD_API_KEY -- npx -y helipod-mcp
-# or the hosted server, nothing to install:
-claude mcp add --transport http helipod https://api.helipod.io/mcp --header "Authorization: Bearer $HELIPOD_API_KEY"
+claude mcp add helipod --env HELIPOD_API_KEY=$HELIPOD_API_KEY -- npx -y github:helipodapp/mcp
 ```
 
 ### Codex
@@ -44,31 +42,55 @@ claude mcp add --transport http helipod https://api.helipod.io/mcp --header "Aut
 ```toml
 [mcp_servers.helipod]
 command = "npx"
-args = ["-y", "helipod-mcp"]
+args = ["-y", "github:helipodapp/mcp"]
 env_vars = ["HELIPOD_API_KEY", "HELIPOD_EMAIL_API_KEY"]
 ```
 
-Hosted instead:
-
-```toml
-[mcp_servers.helipod]
-url = "https://api.helipod.io/mcp"
-bearer_token_env_var = "HELIPOD_API_KEY"
-```
-
-Skills: copy the folders in `skills/` to `~/.codex/skills/` (all projects) or `.agents/skills/` (one repository).
-
 ### Cursor
 
-`.cursor/mcp.json` (or `~/.cursor/mcp.json`):
+`~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` (one project):
 
 ```json
 {
   "mcpServers": {
     "helipod": {
       "command": "npx",
-      "args": ["-y", "helipod-mcp"],
+      "args": ["-y", "github:helipodapp/mcp"],
       "env": { "HELIPOD_API_KEY": "${env:HELIPOD_API_KEY}" }
+    }
+  }
+}
+```
+
+### Gemini CLI
+
+`~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "helipod": {
+      "command": "npx",
+      "args": ["-y", "github:helipodapp/mcp"],
+      "env": { "HELIPOD_API_KEY": "$HELIPOD_API_KEY" }
+    }
+  }
+}
+```
+
+Gemini CLI only starts MCP servers in folders you have trusted.
+
+### opencode
+
+`~/.config/opencode/opencode.json`:
+
+```json
+{
+  "mcp": {
+    "helipod": {
+      "type": "local",
+      "command": ["npx", "-y", "github:helipodapp/mcp"],
+      "environment": { "HELIPOD_API_KEY": "{env:HELIPOD_API_KEY}" }
     }
   }
 }
@@ -85,7 +107,7 @@ Skills: copy the folders in `skills/` to `~/.codex/skills/` (all projects) or `.
     "helipod": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "helipod-mcp"],
+      "args": ["-y", "github:helipodapp/mcp"],
       "env": { "HELIPOD_API_KEY": "${input:helipod-key}" }
     }
   }
@@ -100,18 +122,27 @@ Skills: copy the folders in `skills/` to `~/.codex/skills/` (all projects) or `.
 {
   "mcpServers": {
     "helipod": {
-      "serverUrl": "https://api.helipod.io/mcp",
-      "headers": { "Authorization": "Bearer hel_..." }
+      "command": "npx",
+      "args": ["-y", "github:helipodapp/mcp"],
+      "env": { "HELIPOD_API_KEY": "hel_..." }
     }
   }
 }
 ```
 
-### Claude Desktop and other clients
+### Other clients
 
-Run `npx -y helipod-mcp` as a stdio server with `HELIPOD_API_KEY` in its environment, or connect to `https://api.helipod.io/mcp` (Streamable HTTP) with `Authorization: Bearer <key>`. On the hosted server, send the email key as `X-Helipod-Email-Key`.
+Run `npx -y github:helipodapp/mcp` as a stdio MCP server with `HELIPOD_API_KEY` (and optionally `HELIPOD_EMAIL_API_KEY`) in its environment.
 
-Other agents that read `SKILL.md` files can use the `skills/` folder as is.
+## Skills for other agents
+
+Claude Code gets the skills with the plugin. For Codex, Cursor, Gemini CLI, opencode, GitHub Copilot and other agents that read `SKILL.md` files:
+
+```sh
+npx skills add helipodapp/mcp -g
+```
+
+Pick your agents when asked (or pass `-a codex cursor gemini-cli opencode -y`). Without `-g` the skills go into the current project only.
 
 ## 3. Ask
 
