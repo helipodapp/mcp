@@ -1,4 +1,5 @@
-// VPS API tools: plans, servers, power, reinstall, credentials, billing, firewall, snapshots, backups.
+// VPS API tools: plans, servers, power, reinstall, credentials, billing, upgrades, metrics, firewall, port forwarding,
+// SSH keys, snapshots, backups.
 import { z } from "zod";
 import { defineTool } from "../tool.js";
 
@@ -81,9 +82,27 @@ export const vpsTools = [
     }),
     defineTool({
         name: "upgrade_vps", title: "Upgrade VPS plan", kind: "write",
-        description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. Confirm with the user.",
+        description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. Call get_vps_upgrade_options first: use only a planId it lists, tell the user its price in IDR and that the server restarts, and wait for an explicit yes.",
         input: { vpsId, planId: z.string() },
         run: (a, api) => api.api("POST", `/vps/${a.vpsId}/upgrade`, { body: { planId: a.planId } }),
+    }),
+    defineTool({
+        name: "get_vps_upgrade_options", title: "VPS upgrade options", kind: "read",
+        description: "Plans this server can move to (same family and region) with the price to pay now for the days left (IDR). Call it before upgrade_vps.",
+        input: { vpsId },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/upgrade-options`),
+    }),
+    defineTool({
+        name: "rename_vps", title: "Rename VPS", kind: "write", idempotent: true,
+        description: "Change a server's display name (3-50 characters). Nothing on the server changes.",
+        input: { vpsId, name: z.string().min(3).max(50) },
+        run: (a, api) => api.api("PATCH", `/vps/${a.vpsId}`, { body: { name: a.name } }),
+    }),
+    defineTool({
+        name: "get_vps_metrics", title: "VPS metrics", kind: "read",
+        description: "CPU, memory, disk and network use of a server. range (1h default, 6h, 24h, 7d, 30d) applies to servers with history; others return their latest reading.",
+        input: { vpsId, range: z.enum(["1h", "6h", "24h", "7d", "30d"]).optional() },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/metrics`, { query: { range: a.range } }),
     }),
     defineTool({
         name: "toggle_vps_auto_renew", title: "Toggle VPS auto-renew", kind: "write",
@@ -114,6 +133,56 @@ export const vpsTools = [
         description: "Remove rules by id (from list_firewall_rules). All must match or nothing is removed.",
         input: { vpsId, ids: z.array(z.string()).min(1).max(100) },
         run: (a, api) => api.api("DELETE", `/vps/${a.vpsId}/firewall`, { body: { ids: a.ids } }),
+    }),
+    defineTool({
+        name: "list_vps_ports", title: "List port forwards", kind: "read",
+        description: "Port forwards of a server (servers on a shared IP): the public port range it may use and each forward (protocol, public port, internal port, domain for http/https routes). Not available on every server type.",
+        input: { vpsId },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/ports`),
+    }),
+    defineTool({
+        name: "add_vps_port", title: "Add port forward", kind: "write",
+        description: "Forward a public port to the server: protocol tcp/udp/both uses a port inside the server's portRange (from list_vps_ports); protocol http/https routes a domain on port 80/443 to internalPort (point the domain's DNS at the server's IP first). The server must be running.",
+        input: {
+            vpsId,
+            port: z.number().int().min(1).max(65535).describe("Public port (tcp/udp: inside portRange; http=80, https=443)"),
+            protocol: z.enum(["tcp", "udp", "both", "http", "https"]).optional().describe("Default tcp"),
+            internalPort: z.number().int().min(1).max(65535).optional().describe("Port on the server (default: same as port)"),
+            domain: z.string().min(1).max(253).optional().describe("http/https only: the domain to route, e.g. app.example.com"),
+            description: z.string().max(200).optional(),
+        },
+        run: ({ vpsId: id, ...body }, api) => api.api("POST", `/vps/${id}/ports`, { body }),
+    }),
+    defineTool({
+        name: "remove_vps_port", title: "Remove port forward", kind: "destructive",
+        description: "Remove a port forward (id from list_vps_ports). Whatever reaches the server through it stops working: confirm with the user.",
+        input: { vpsId, allocationId: z.string().uuid().describe("Port forward id from list_vps_ports") },
+        run: (a, api) => api.api("DELETE", `/vps/${a.vpsId}/ports/${a.allocationId}`),
+    }),
+    defineTool({
+        name: "list_vps_ssh_keys", title: "List SSH keys", kind: "read",
+        description: "SSH public keys allowed to log in as root, by fingerprint (SHA256:…), with type and comment. Not available on every server type.",
+        input: { vpsId },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/ssh-keys`),
+    }),
+    defineTool({
+        name: "add_vps_ssh_key", title: "Add SSH key", kind: "write",
+        description: "Allow an SSH PUBLIC key (e.g. the contents of ~/.ssh/id_ed25519.pub) to log in as root; at most 10 per server. Never send a private key: it is refused. The server must be running.",
+        input: { vpsId, publicKey: z.string().min(10).max(8192).describe('One line like "ssh-ed25519 AAAA… user@host"') },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/ssh-keys`, { body: { publicKey: a.publicKey } }),
+    }),
+    defineTool({
+        name: "remove_vps_ssh_key", title: "Remove SSH key", kind: "destructive",
+        description: "Remove an SSH key by fingerprint (from list_vps_ssh_keys). Whoever logs in with it loses access; make sure the user keeps another way in (another key or the root password).",
+        input: { vpsId, fingerprint: z.string().min(8).max(100).describe("e.g. SHA256:abc…+/= as listed") },
+        // The fingerprint is base64 ('/' and '+'): sent in base64url form, which the API accepts, so the path stays one segment.
+        run: (a, api) => api.api("DELETE", `/vps/${a.vpsId}/ssh-keys/${a.fingerprint.trim().replace(/^SHA256:/, "").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`),
+    }),
+    defineTool({
+        name: "set_vps_ssh", title: "Turn SSH on / off", kind: "write", idempotent: true,
+        description: "Turn SSH access to the server on or off (no change when it is already in that state). Turning it off locks out every SSH session and key: confirm with the user first. The server must be running.",
+        input: { vpsId, enabled: z.boolean() },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/ssh`, { body: { enabled: a.enabled } }),
     }),
     defineTool({
         name: "list_snapshots", title: "List snapshots", kind: "read",

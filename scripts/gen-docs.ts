@@ -6,6 +6,8 @@ import { vpsTools } from "../src/tools/vps.js";
 import { domainTools } from "../src/tools/domains.js";
 import { databaseTools } from "../src/tools/databases.js";
 import { emailTools } from "../src/tools/email.js";
+import { accountTools } from "../src/tools/account.js";
+import { aiTools } from "../src/tools/ai.js";
 import { generalTools } from "../src/tools/general.js";
 import type { ToolDef } from "../src/tool.js";
 
@@ -17,6 +19,8 @@ const GROUPS: [string, string, ToolDef<any>[]][] = [
     ["VPS", "VPS API key scope.", vpsTools],
     ["Domains", "Domain API key scope (a whole-account key). `search_domain` and `domain_prices` need no key.", domainTools],
     ["Email", "Uses the email API key (`HELIPOD_EMAIL_API_KEY`).", emailTools],
+    ["Account", "Account API key scope. Wallet, invoices and tickets need a whole-account key.", accountTools],
+    ["AI", "AI API key scope. Balance and top-ups need a whole-account key.", aiTools],
     ["Other", "", generalTools],
 ];
 const KIND = { read: "read-only", write: "write", destructive: "destructive" } as const;

@@ -1,9 +1,9 @@
-// Email API tools: send, logs, analytics, domains, templates, contacts, segments, topics, broadcasts,
+// Email API tools: plan (buy / renew / change / inbox add-ons, dry run first), send, logs, analytics, domains, templates, contacts, segments, topics, broadcasts,
 // suppressions, webhooks and the inbox. They use the email key when one is set,
 // else the Helipod API key / sign-in token (needs the Email API enabled; projectId picks the project
 // for a whole-account key).
 import { z } from "zod";
-import { defineTool } from "../tool.js";
+import { defineTool, purchaseKey } from "../tool.js";
 
 const projectId = z.string().uuid().optional().describe("Project whose email to use. Only needed with a whole-account key that reaches several projects with email.");
 const uid = (what: string) => z.string().uuid().describe(`${what} id`);
@@ -23,6 +23,10 @@ const message = z.object({
     templateId: z.string().optional(), templateData: z.record(z.string(), z.string()).optional(),
     variables: z.record(z.string(), z.string()).optional(), idempotencyKey: z.string().max(128).optional(),
 });
+const dryRun = z.boolean().optional().describe("true = return the price (IDR) and the wallet balance after it; nothing is charged or changed");
+const idem = z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real purchase. Generated when omitted; pass the same value when retrying so it is never charged twice");
+const MONEY = "COSTS MONEY from the wallet. Call with dryRun=true first, tell the user the charge (IDR) and walletBalanceAfter, and wait for an explicit yes before the real call.";
+const planCode = z.string().min(1).max(50).describe("Plan code from list_email_plans");
 const folder = z.enum(["inbox", "spam", "archive", "trash"]);
 const AUDIENCE = "Before it goes out, tell the user how many people it reaches: get_email_broadcast for its segmentId/topicId, then the segment's contactCount (list_email_segments) or preview_email_segment with no rules for all contacts (unsubscribed and suppressed addresses are skipped).";
 
@@ -32,6 +36,59 @@ export const emailTools = [
         description: "Email service of the key's project: plan, usage today and this month, limits, counts.",
         input: { projectId },
         run: (a, api) => api.email("GET", "/status", { project: a.projectId }),
+    }),
+    defineTool({
+        name: "list_email_plans", title: "List email plans", kind: "read",
+        description: "Email plans: code, monthly price (IDR), sending quota, mailboxes and inbox storage, billing cycles (1/3/6/12 months). Use the code with buy_email_plan or change_email_plan.",
+        input: {},
+        run: (_a, api) => api.email("GET", "/plans"),
+    }),
+    defineTool({
+        name: "get_email_plan", title: "Get email plan", kind: "read",
+        description: "The project's current email plan and subscription: plan, period, expiry, auto-renew, extra mailboxes and storage. plan is null when there is none.",
+        input: { projectId },
+        run: (a, api) => api.email("GET", "/plan", { project: a.projectId }),
+    }),
+    defineTool({
+        name: "buy_email_plan", title: "Buy email plan", kind: "write",
+        description: `Start an email plan for the project (a free plan activates without charge). ${MONEY} The dry run's mode says purchase, activate_free or already_active.`,
+        input: { projectId, planCode, months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]).optional().describe("Billing cycle, default 1"), dryRun, idempotencyKey: idem },
+        run: (a, api) => api.email("POST", "/plan", {
+            project: a.projectId, body: { planCode: a.planCode, months: a.months },
+            query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey),
+        }),
+    }),
+    defineTool({
+        name: "renew_email_plan", title: "Renew email plan", kind: "write",
+        description: `Renew the project's ended or expiring email plan (409 PLAN_ACTIVE while one is still running and cannot be extended). Repeats the last plan and cycle unless planCode / months are given. ${MONEY}`,
+        input: { projectId, planCode: planCode.optional(), months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]).optional(), dryRun, idempotencyKey: idem },
+        run: (a, api) => api.email("POST", "/plan/renew", {
+            project: a.projectId, body: { planCode: a.planCode, months: a.months },
+            query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey),
+        }),
+    }),
+    defineTool({
+        name: "change_email_plan", title: "Change email plan", kind: "write",
+        description: `Move the active email plan to another plan. An upgrade applies now and charges the prorated difference to the same end date; a downgrade is scheduled for the next cycle (no refund). ${MONEY}`,
+        input: { projectId, planCode, dryRun, idempotencyKey: idem },
+        run: (a, api) => api.email("POST", "/plan/change", {
+            project: a.projectId, body: { planCode: a.planCode },
+            query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey),
+        }),
+    }),
+    defineTool({
+        name: "buy_email_inbox_addon", title: "Set inbox add-ons", kind: "write",
+        description: `Set the TOTAL extra mailboxes and extra inbox storage on the active paid plan (absolute numbers, not additions: read get_email_plan first and add to the current values). Increases are charged now, prorated to the plan's end date, then renew with the plan; decreases must still fit what is in use. ${MONEY}`,
+        input: {
+            projectId,
+            extraMailboxes: z.number().int().min(0).max(50).describe("Total extra mailboxes wanted (0-50)"),
+            extraStorageGb: z.number().int().min(0).max(1000).describe("Total extra inbox storage in GB (0-1000)"),
+            dryRun, idempotencyKey: idem,
+        },
+        run: (a, api) => api.email("POST", "/plan/addons", {
+            project: a.projectId, body: { extraMailboxes: a.extraMailboxes, extraStorageGb: a.extraStorageGb },
+            query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey),
+        }),
     }),
     defineTool({
         name: "send_email", title: "Send email", kind: "write",

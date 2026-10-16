@@ -34943,6 +34943,11 @@ function register(server, api2, defs) {
     });
   }
 }
+function purchaseKey(dryRun, given) {
+  if (dryRun)
+    return;
+  return given ?? globalThis.crypto.randomUUID();
+}
 
 // src/tools/containers.ts
 var id = (what) => exports_external.string().uuid().describe(`${what} id (UUID)`);
@@ -34970,6 +34975,85 @@ var containerTools = [
     description: "One project with its environments (ids and names). Use it to find an environmentId when you already know the project.",
     input: { projectId: id("Project") },
     run: (a, api2) => api2.api("GET", `${C}/projects/${a.projectId}`)
+  }),
+  defineTool({
+    name: "create_project",
+    title: "Create project",
+    kind: "write",
+    description: "Create a project (free) with its default production environment. Needs a whole-account key (a key limited to one project gets 403). Pass an idempotencyKey when retrying.",
+    input: { name: exports_external.string().min(3).max(100), description: exports_external.string().max(500).optional(), idempotencyKey: idem },
+    run: (a, api2) => api2.api("POST", `${C}/projects`, { body: { name: a.name, description: a.description }, idempotencyKey: a.idempotencyKey })
+  }),
+  defineTool({
+    name: "update_project",
+    title: "Rename project",
+    kind: "write",
+    idempotent: true,
+    description: "Change a project's name and/or description.",
+    input: { projectId: id("Project"), name: exports_external.string().min(3).max(100).optional(), description: exports_external.string().max(500).optional() },
+    run: (a, api2) => api2.api("PATCH", `${C}/projects/${a.projectId}`, { body: { name: a.name, description: a.description } })
+  }),
+  defineTool({
+    name: "delete_project",
+    title: "Delete project",
+    kind: "destructive",
+    description: "Delete an EMPTY project and its environments and shared variables. Irreversible. Refused (409 PROJECT_NOT_EMPTY) while it still has services, databases, VPS or other resources: those must be deleted first. Needs a whole-account key. Only after the user confirms; confirm must be the project's exact name.",
+    input: { projectId: id("Project"), confirm: exports_external.string().max(255).describe("The project name, exactly") },
+    run: (a, api2) => api2.api("DELETE", `${C}/projects/${a.projectId}`, { body: { confirm: a.confirm } })
+  }),
+  defineTool({
+    name: "create_environment",
+    title: "Create environment",
+    kind: "write",
+    description: "Add an environment (e.g. staging) to a project. Free; services in it are billed as usual once deployed.",
+    input: { projectId: id("Project"), name: exports_external.string().regex(/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,49}$/).describe("1-50 characters: letters, digits, space _ . -") },
+    run: (a, api2) => api2.api("POST", `${C}/projects/${a.projectId}/environments`, { body: { name: a.name } })
+  }),
+  defineTool({
+    name: "rename_environment",
+    title: "Rename environment",
+    kind: "write",
+    idempotent: true,
+    description: "Rename an environment (names are unique within the project).",
+    input: { environmentId: id("Environment"), name: exports_external.string().regex(/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,49}$/) },
+    run: (a, api2) => api2.api("PATCH", `${C}/environments/${a.environmentId}`, { body: { name: a.name } })
+  }),
+  defineTool({
+    name: "delete_environment",
+    title: "Delete environment",
+    kind: "destructive",
+    description: "Delete an EMPTY environment (409 ENVIRONMENT_NOT_EMPTY while it has services: delete them first). Irreversible. Only after the user confirms; confirm must be the environment's exact name.",
+    input: { environmentId: id("Environment"), confirm: exports_external.string().max(255).describe("The environment name, exactly") },
+    run: (a, api2) => api2.api("DELETE", `${C}/environments/${a.environmentId}`, { body: { confirm: a.confirm } })
+  }),
+  defineTool({
+    name: "list_project_variables",
+    title: "List shared project variables",
+    kind: "read",
+    description: "Variables shared by every service of a project (referenced as ${{shared.KEY}}). Secret values are never returned (value is null).",
+    input: { projectId: id("Project") },
+    run: (a, api2) => api2.api("GET", `${C}/projects/${a.projectId}/variables`)
+  }),
+  defineTool({
+    name: "set_project_variables",
+    title: "Set shared project variables",
+    kind: "write",
+    idempotent: true,
+    description: "Create or update shared project variables (other keys are kept). Mark credentials as secrets (once secret, always secret). Services pick them up on their next deploy.",
+    input: {
+      projectId: id("Project"),
+      variables: exports_external.record(exports_external.string().max(255), exports_external.string()).describe("KEY: value pairs"),
+      secrets: exports_external.array(exports_external.string().max(255)).max(100).optional().describe("Keys to store as secrets (write-only)")
+    },
+    run: (a, api2) => api2.api("PUT", `${C}/projects/${a.projectId}/variables`, { body: { variables: a.variables, secrets: a.secrets } })
+  }),
+  defineTool({
+    name: "delete_project_variable",
+    title: "Delete shared project variable",
+    kind: "destructive",
+    description: "Remove one shared project variable. Services that reference it lose it on their next deploy: check with the user.",
+    input: { projectId: id("Project"), key: exports_external.string().max(255) },
+    run: (a, api2) => api2.api("DELETE", `${C}/projects/${a.projectId}/variables/${encodeURIComponent(a.key)}`)
   }),
   defineTool({
     name: "list_services",
@@ -35038,20 +35122,22 @@ var containerTools = [
   }),
   defineTool({
     name: "update_service",
-    title: "Update service settings",
+    title: "Update / rename service",
     kind: "write",
     idempotent: true,
-    description: "Change start command, root directory, health check or startup dependencies. Applies on the next deploy (needsRedeploy).",
+    description: "Rename a service or change its start command, root directory, health check or startup dependencies. Settings apply on the next deploy (needsRedeploy). Renaming breaks references like ${{oldName.KEY}} in other services' variables: show the user the returned warnings and fix those variables (set_variables / set_project_variables) before redeploying.",
     input: {
       serviceId: id("Service"),
-      startCommand: exports_external.string().nullable().optional().describe("null removes the override"),
-      rootDirectory: exports_external.string().nullable().optional(),
-      healthcheckPath: exports_external.string().nullable().optional().describe("null removes the health check"),
+      name: exports_external.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,39}$/).optional().describe("New service name (letters, digits, _ -; starts with a letter; unique in the environment)"),
+      startCommand: exports_external.string().max(1000).nullable().optional().describe("null removes the override"),
+      rootDirectory: exports_external.string().max(255).nullable().optional(),
+      healthcheckPath: exports_external.string().max(255).nullable().optional().describe("null removes the health check"),
       healthcheckTimeout: exports_external.number().int().min(1).max(3600).optional(),
-      dependsOn: exports_external.array(exports_external.string().uuid()).optional().describe("Service ids (same environment) to wait for at startup")
+      dependsOn: exports_external.array(exports_external.string().uuid()).max(20).optional().describe("Service ids (same environment) to wait for at startup")
     },
     run: (a, api2) => api2.api("PATCH", `${C}/services/${a.serviceId}`, {
       body: {
+        name: a.name,
         startCommand: a.startCommand,
         rootDirectory: a.rootDirectory,
         dependsOn: a.dependsOn,
@@ -35224,6 +35310,99 @@ var containerTools = [
     run: (a, api2) => api2.api("DELETE", `${C}/services/${a.serviceId}/volumes/${a.volumeId}`)
   }),
   defineTool({
+    name: "resize_volume",
+    title: "Resize volume",
+    kind: "write",
+    description: "Change a volume's size (1-50 GB; never below the space already used). A larger volume COSTS MONEY: it raises the daily cost, charged pro rata when the service is redeployed and in full from the next renewal. Call with dryRun=true first, show currentDailyCost vs newDailyCost (IDR) and wait for the user's yes. Applies on the next deploy.",
+    input: {
+      serviceId: id("Service"),
+      volumeId: id("Volume"),
+      sizeGb: exports_external.number().int().min(1).max(50).optional().describe("New size in GB (give sizeGb or sizeMb)"),
+      sizeMb: exports_external.number().int().min(1024).max(51200).multipleOf(1024).optional().describe("New size in MB, a multiple of 1024"),
+      dryRun
+    },
+    run: (a, api2) => {
+      if (a.sizeGb === undefined === (a.sizeMb === undefined))
+        throw new Error("Give exactly one of sizeGb or sizeMb.");
+      return api2.api("PATCH", `${C}/services/${a.serviceId}/volumes/${a.volumeId}`, {
+        query: { dryRun: a.dryRun ? "true" : undefined },
+        body: { sizeGb: a.sizeGb, sizeMb: a.sizeMb }
+      });
+    }
+  }),
+  defineTool({
+    name: "update_service_domain_port",
+    title: "Change domain target port",
+    kind: "write",
+    idempotent: true,
+    description: "Point an existing domain of a service (from list_service_domains) at another container port. Applies on the next deploy when needsRedeploy is true.",
+    input: { serviceId: id("Service"), domainId: id("Domain"), port: exports_external.number().int().min(1).max(65535) },
+    run: (a, api2) => api2.api("PATCH", `${C}/services/${a.serviceId}/domains/${a.domainId}`, { body: { port: a.port } })
+  }),
+  defineTool({
+    name: "get_function_code",
+    title: "Get function source",
+    kind: "read",
+    description: "Source code of a function service (409 NOT_A_FUNCTION for other services).",
+    input: { serviceId: id("Service") },
+    run: (a, api2) => api2.api("GET", `${C}/services/${a.serviceId}/function`)
+  }),
+  defineTool({
+    name: "set_function_code",
+    title: "Save function source",
+    kind: "write",
+    idempotent: true,
+    description: "Replace the whole source code of a function service (up to 512 KB). The previous code is overwritten: read get_function_code first when editing. Runs after the next deploy (deploy_service).",
+    input: { serviceId: id("Service"), code: exports_external.string().min(1).max(512 * 1024) },
+    run: (a, api2) => api2.api("PUT", `${C}/services/${a.serviceId}/function`, { body: { code: a.code } })
+  }),
+  defineTool({
+    name: "list_secret_files",
+    title: "List secret files",
+    kind: "read",
+    description: "Secret files mounted into a service (name, file name, mount path). Contents are write-only and never returned.",
+    input: { serviceId: id("Service") },
+    run: (a, api2) => api2.api("GET", `${C}/services/${a.serviceId}/files`)
+  }),
+  defineTool({
+    name: "add_secret_file",
+    title: "Add secret file",
+    kind: "write",
+    description: "Upload a file (certificate, key, credentials JSON, config) that is mounted read-only into the service at mountPath. Content is base64 of the file's bytes, at most 10 MB; it is stored as a secret and can never be read back. Applies on the next deploy. Don't echo the contents in chat.",
+    input: {
+      serviceId: id("Service"),
+      fileName: exports_external.string().min(1).max(200).describe("e.g. service-account.json"),
+      mountPath: exports_external.string().regex(/^\/[A-Za-z0-9._\/@+-]{0,254}$/).describe("Absolute path in the container, e.g. /etc/secrets/service-account.json"),
+      contentBase64: exports_external.string().min(4).max(14000000).describe("The file's bytes in standard base64"),
+      name: exports_external.string().max(255).optional().describe("Label shown in the dashboard")
+    },
+    run: ({ serviceId, ...body }, api2) => api2.api("POST", `${C}/services/${serviceId}/files`, { body })
+  }),
+  defineTool({
+    name: "update_secret_file",
+    title: "Update secret file",
+    kind: "write",
+    idempotent: true,
+    description: "Replace a secret file's contents (base64) and/or change its mount path or label. The old contents are overwritten. Applies on the next deploy.",
+    input: {
+      serviceId: id("Service"),
+      fileId: id("File"),
+      contentBase64: exports_external.string().min(4).max(14000000).optional(),
+      fileName: exports_external.string().min(1).max(200).optional(),
+      mountPath: exports_external.string().regex(/^\/[A-Za-z0-9._\/@+-]{0,254}$/).optional(),
+      name: exports_external.string().max(255).optional()
+    },
+    run: ({ serviceId, fileId, ...body }, api2) => api2.api("PUT", `${C}/services/${serviceId}/files/${fileId}`, { body })
+  }),
+  defineTool({
+    name: "delete_secret_file",
+    title: "Delete secret file",
+    kind: "destructive",
+    description: "Delete a secret file; it is gone from the service after the next deploy and cannot be recovered (contents are never readable). Confirm with the user.",
+    input: { serviceId: id("Service"), fileId: id("File") },
+    run: (a, api2) => api2.api("DELETE", `${C}/services/${a.serviceId}/files/${a.fileId}`)
+  }),
+  defineTool({
     name: "get_service_logs",
     title: "Get runtime logs",
     kind: "read",
@@ -35393,9 +35572,34 @@ var vpsTools = [
     name: "upgrade_vps",
     title: "Upgrade VPS plan",
     kind: "write",
-    description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. Confirm with the user.",
+    description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. Call get_vps_upgrade_options first: use only a planId it lists, tell the user its price in IDR and that the server restarts, and wait for an explicit yes.",
     input: { vpsId, planId: exports_external.string() },
     run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/upgrade`, { body: { planId: a.planId } })
+  }),
+  defineTool({
+    name: "get_vps_upgrade_options",
+    title: "VPS upgrade options",
+    kind: "read",
+    description: "Plans this server can move to (same family and region) with the price to pay now for the days left (IDR). Call it before upgrade_vps.",
+    input: { vpsId },
+    run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/upgrade-options`)
+  }),
+  defineTool({
+    name: "rename_vps",
+    title: "Rename VPS",
+    kind: "write",
+    idempotent: true,
+    description: "Change a server's display name (3-50 characters). Nothing on the server changes.",
+    input: { vpsId, name: exports_external.string().min(3).max(50) },
+    run: (a, api2) => api2.api("PATCH", `/vps/${a.vpsId}`, { body: { name: a.name } })
+  }),
+  defineTool({
+    name: "get_vps_metrics",
+    title: "VPS metrics",
+    kind: "read",
+    description: "CPU, memory, disk and network use of a server. range (1h default, 6h, 24h, 7d, 30d) applies to servers with history; others return their latest reading.",
+    input: { vpsId, range: exports_external.enum(["1h", "6h", "24h", "7d", "30d"]).optional() },
+    run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/metrics`, { query: { range: a.range } })
   }),
   defineTool({
     name: "toggle_vps_auto_renew",
@@ -35437,6 +35641,70 @@ var vpsTools = [
     description: "Remove rules by id (from list_firewall_rules). All must match or nothing is removed.",
     input: { vpsId, ids: exports_external.array(exports_external.string()).min(1).max(100) },
     run: (a, api2) => api2.api("DELETE", `/vps/${a.vpsId}/firewall`, { body: { ids: a.ids } })
+  }),
+  defineTool({
+    name: "list_vps_ports",
+    title: "List port forwards",
+    kind: "read",
+    description: "Port forwards of a server (servers on a shared IP): the public port range it may use and each forward (protocol, public port, internal port, domain for http/https routes). Not available on every server type.",
+    input: { vpsId },
+    run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/ports`)
+  }),
+  defineTool({
+    name: "add_vps_port",
+    title: "Add port forward",
+    kind: "write",
+    description: "Forward a public port to the server: protocol tcp/udp/both uses a port inside the server's portRange (from list_vps_ports); protocol http/https routes a domain on port 80/443 to internalPort (point the domain's DNS at the server's IP first). The server must be running.",
+    input: {
+      vpsId,
+      port: exports_external.number().int().min(1).max(65535).describe("Public port (tcp/udp: inside portRange; http=80, https=443)"),
+      protocol: exports_external.enum(["tcp", "udp", "both", "http", "https"]).optional().describe("Default tcp"),
+      internalPort: exports_external.number().int().min(1).max(65535).optional().describe("Port on the server (default: same as port)"),
+      domain: exports_external.string().min(1).max(253).optional().describe("http/https only: the domain to route, e.g. app.example.com"),
+      description: exports_external.string().max(200).optional()
+    },
+    run: ({ vpsId: id2, ...body }, api2) => api2.api("POST", `/vps/${id2}/ports`, { body })
+  }),
+  defineTool({
+    name: "remove_vps_port",
+    title: "Remove port forward",
+    kind: "destructive",
+    description: "Remove a port forward (id from list_vps_ports). Whatever reaches the server through it stops working: confirm with the user.",
+    input: { vpsId, allocationId: exports_external.string().uuid().describe("Port forward id from list_vps_ports") },
+    run: (a, api2) => api2.api("DELETE", `/vps/${a.vpsId}/ports/${a.allocationId}`)
+  }),
+  defineTool({
+    name: "list_vps_ssh_keys",
+    title: "List SSH keys",
+    kind: "read",
+    description: "SSH public keys allowed to log in as root, by fingerprint (SHA256:…), with type and comment. Not available on every server type.",
+    input: { vpsId },
+    run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/ssh-keys`)
+  }),
+  defineTool({
+    name: "add_vps_ssh_key",
+    title: "Add SSH key",
+    kind: "write",
+    description: "Allow an SSH PUBLIC key (e.g. the contents of ~/.ssh/id_ed25519.pub) to log in as root; at most 10 per server. Never send a private key: it is refused. The server must be running.",
+    input: { vpsId, publicKey: exports_external.string().min(10).max(8192).describe('One line like "ssh-ed25519 AAAA… user@host"') },
+    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/ssh-keys`, { body: { publicKey: a.publicKey } })
+  }),
+  defineTool({
+    name: "remove_vps_ssh_key",
+    title: "Remove SSH key",
+    kind: "destructive",
+    description: "Remove an SSH key by fingerprint (from list_vps_ssh_keys). Whoever logs in with it loses access; make sure the user keeps another way in (another key or the root password).",
+    input: { vpsId, fingerprint: exports_external.string().min(8).max(100).describe("e.g. SHA256:abc…+/= as listed") },
+    run: (a, api2) => api2.api("DELETE", `/vps/${a.vpsId}/ssh-keys/${a.fingerprint.trim().replace(/^SHA256:/, "").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`)
+  }),
+  defineTool({
+    name: "set_vps_ssh",
+    title: "Turn SSH on / off",
+    kind: "write",
+    idempotent: true,
+    description: "Turn SSH access to the server on or off (no change when it is already in that state). Turning it off locks out every SSH session and key: confirm with the user first. The server must be running.",
+    input: { vpsId, enabled: exports_external.boolean() },
+    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/ssh`, { body: { enabled: a.enabled } })
   }),
   defineTool({
     name: "list_snapshots",
@@ -35588,6 +35856,8 @@ var vpsTools = [
 // src/tools/domains.ts
 var domainId = exports_external.number().int().positive().describe("Domain id (number, from list_my_domains)");
 var hostId = exports_external.number().int().positive().describe("Child nameserver id (from list_child_nameservers)");
+var dryRun2 = exports_external.boolean().optional().describe("true = return the exact price (IDR, VAT included) and the wallet balance after it; nothing is charged or registered");
+var DRY = "Call with dryRun=true first, tell the user the price and walletBalanceAfter, and wait for an explicit yes before the real call.";
 var record3 = exports_external.object({
   name: exports_external.string().describe('"@" for the domain itself, or a label like "www"'),
   type: exports_external.enum(["A", "AAAA", "MX", "MXE", "CNAME", "SPF", "TXT"]),
@@ -35631,37 +35901,62 @@ var domainTools = [
     name: "check_registrant",
     title: "Check owner details",
     kind: "read",
-    description: "Whether the account's domain owner details are complete (required before the first registration; completed in the dashboard).",
+    description: "Whether the account's domain owner details are complete (required before the first registration) and which fields are missing. Fill them with update_registrant.",
     input: {},
     run: (_a3, api2) => api2.api("GET", "/domains/registrant")
+  }),
+  defineTool({
+    name: "update_registrant",
+    title: "Update owner details",
+    kind: "write",
+    idempotent: true,
+    description: "Set the account's domain owner (registrant) details the registrar needs: name, phone, addressLine1, city, state, countryCode and postalCode are required for a complete profile (organization, addressLine2 and fax are optional). Send only fields to change. This is personal data: use only what the user gave you, never invent or guess it, and don't repeat it back needlessly. The answer says whether the details are now complete and which fields are still missing (it never echoes them).",
+    input: {
+      name: exports_external.string().min(1).max(255).optional().describe("Owner's full name"),
+      organization: exports_external.string().max(255).optional().describe("Company / organization (optional)"),
+      phone: exports_external.string().min(9).max(20).optional().describe("Phone number, 9-20 characters, e.g. +6281234567890"),
+      addressLine1: exports_external.string().max(500).optional().describe("Street address"),
+      addressLine2: exports_external.string().max(500).optional(),
+      city: exports_external.string().max(100).optional(),
+      state: exports_external.string().max(100).optional().describe("State / province"),
+      countryCode: exports_external.string().regex(/^[A-Z]{2}$/).optional().describe("ISO 3166-1 alpha-2, e.g. ID"),
+      postalCode: exports_external.string().max(20).optional(),
+      fax: exports_external.string().max(50).optional()
+    },
+    run: (a, api2) => {
+      if (!Object.values(a).some((v) => v !== undefined))
+        throw new Error("Send at least one field to change.");
+      return api2.api("PATCH", "/domains/registrant", { body: a });
+    }
   }),
   defineTool({
     name: "register_domain",
     title: "Register domain",
     kind: "write",
-    description: "Register a domain for 1 year. COSTS MONEY from the wallet: check search_domain and domain_prices, tell the user the price (plus WHOIS privacy if wanted) and get explicit OK first.",
+    description: `Register a domain for 1 year. COSTS MONEY from the wallet. Check search_domain, and that the owner details are complete (check_registrant / update_registrant). ${DRY} The dry run includes WHOIS privacy when whoisProtection is true.`,
     input: {
       name: exports_external.string().describe("Full domain, e.g. tokosaya.id"),
       nameservers: exports_external.array(exports_external.string()).min(2).max(5).optional(),
-      whoisProtection: exports_external.boolean().optional()
+      whoisProtection: exports_external.boolean().optional(),
+      dryRun: dryRun2
     },
-    run: (a, api2) => api2.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection } })
+    run: (a, api2) => api2.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection }, query: { dryRun: a.dryRun ? "true" : undefined } })
   }),
   defineTool({
     name: "transfer_domain",
     title: "Transfer domain in",
     kind: "write",
-    description: "Transfer a domain from another registrar (adds 1 year). COSTS MONEY: show the transfer price and get the user's OK. Needs the domain's auth code.",
-    input: { name: exports_external.string(), authCode: exports_external.string(), nameservers: exports_external.array(exports_external.string()).min(2).max(5).optional() },
-    run: (a, api2) => api2.api("POST", "/domains/transfer", { body: { name: a.name, authCode: a.authCode, period: 1, nameservers: a.nameservers } })
+    description: `Transfer a domain from another registrar (adds 1 year). COSTS MONEY from the wallet. Needs the domain's auth code. ${DRY}`,
+    input: { name: exports_external.string(), authCode: exports_external.string(), nameservers: exports_external.array(exports_external.string()).min(2).max(5).optional(), dryRun: dryRun2 },
+    run: (a, api2) => api2.api("POST", "/domains/transfer", { body: { name: a.name, authCode: a.authCode, period: 1, nameservers: a.nameservers }, query: { dryRun: a.dryRun ? "true" : undefined } })
   }),
   defineTool({
     name: "renew_domain",
     title: "Renew domain",
     kind: "write",
-    description: "Renew a domain for 1 year. COSTS MONEY: show the renewal price and get the user's OK.",
-    input: { domainId },
-    run: (a, api2) => api2.api("POST", `/domains/${a.domainId}/renew`, { body: { period: 1 } })
+    description: `Renew a domain for 1 year (plus WHOIS privacy when it is on). COSTS MONEY from the wallet. ${DRY}`,
+    input: { domainId, dryRun: dryRun2 },
+    run: (a, api2) => api2.api("POST", `/domains/${a.domainId}/renew`, { body: { period: 1 }, query: { dryRun: a.dryRun ? "true" : undefined } })
   }),
   defineTool({
     name: "list_dns_records",
@@ -35807,6 +36102,10 @@ var message = exports_external.object({
   variables: exports_external.record(exports_external.string(), exports_external.string()).optional(),
   idempotencyKey: exports_external.string().max(128).optional()
 });
+var dryRun3 = exports_external.boolean().optional().describe("true = return the price (IDR) and the wallet balance after it; nothing is charged or changed");
+var idem2 = exports_external.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real purchase. Generated when omitted; pass the same value when retrying so it is never charged twice");
+var MONEY = "COSTS MONEY from the wallet. Call with dryRun=true first, tell the user the charge (IDR) and walletBalanceAfter, and wait for an explicit yes before the real call.";
+var planCode = exports_external.string().min(1).max(50).describe("Plan code from list_email_plans");
 var folder = exports_external.enum(["inbox", "spam", "archive", "trash"]);
 var AUDIENCE = "Before it goes out, tell the user how many people it reaches: get_email_broadcast for its segmentId/topicId, then the segment's contactCount (list_email_segments) or preview_email_segment with no rules for all contacts (unsubscribed and suppressed addresses are skipped).";
 var emailTools = [
@@ -35817,6 +36116,80 @@ var emailTools = [
     description: "Email service of the key's project: plan, usage today and this month, limits, counts.",
     input: { projectId },
     run: (a, api2) => api2.email("GET", "/status", { project: a.projectId })
+  }),
+  defineTool({
+    name: "list_email_plans",
+    title: "List email plans",
+    kind: "read",
+    description: "Email plans: code, monthly price (IDR), sending quota, mailboxes and inbox storage, billing cycles (1/3/6/12 months). Use the code with buy_email_plan or change_email_plan.",
+    input: {},
+    run: (_a3, api2) => api2.email("GET", "/plans")
+  }),
+  defineTool({
+    name: "get_email_plan",
+    title: "Get email plan",
+    kind: "read",
+    description: "The project's current email plan and subscription: plan, period, expiry, auto-renew, extra mailboxes and storage. plan is null when there is none.",
+    input: { projectId },
+    run: (a, api2) => api2.email("GET", "/plan", { project: a.projectId })
+  }),
+  defineTool({
+    name: "buy_email_plan",
+    title: "Buy email plan",
+    kind: "write",
+    description: `Start an email plan for the project (a free plan activates without charge). ${MONEY} The dry run's mode says purchase, activate_free or already_active.`,
+    input: { projectId, planCode, months: exports_external.union([exports_external.literal(1), exports_external.literal(3), exports_external.literal(6), exports_external.literal(12)]).optional().describe("Billing cycle, default 1"), dryRun: dryRun3, idempotencyKey: idem2 },
+    run: (a, api2) => api2.email("POST", "/plan", {
+      project: a.projectId,
+      body: { planCode: a.planCode, months: a.months },
+      query: { dryRun: a.dryRun ? "true" : undefined },
+      idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey)
+    })
+  }),
+  defineTool({
+    name: "renew_email_plan",
+    title: "Renew email plan",
+    kind: "write",
+    description: `Renew the project's ended or expiring email plan (409 PLAN_ACTIVE while one is still running and cannot be extended). Repeats the last plan and cycle unless planCode / months are given. ${MONEY}`,
+    input: { projectId, planCode: planCode.optional(), months: exports_external.union([exports_external.literal(1), exports_external.literal(3), exports_external.literal(6), exports_external.literal(12)]).optional(), dryRun: dryRun3, idempotencyKey: idem2 },
+    run: (a, api2) => api2.email("POST", "/plan/renew", {
+      project: a.projectId,
+      body: { planCode: a.planCode, months: a.months },
+      query: { dryRun: a.dryRun ? "true" : undefined },
+      idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey)
+    })
+  }),
+  defineTool({
+    name: "change_email_plan",
+    title: "Change email plan",
+    kind: "write",
+    description: `Move the active email plan to another plan. An upgrade applies now and charges the prorated difference to the same end date; a downgrade is scheduled for the next cycle (no refund). ${MONEY}`,
+    input: { projectId, planCode, dryRun: dryRun3, idempotencyKey: idem2 },
+    run: (a, api2) => api2.email("POST", "/plan/change", {
+      project: a.projectId,
+      body: { planCode: a.planCode },
+      query: { dryRun: a.dryRun ? "true" : undefined },
+      idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey)
+    })
+  }),
+  defineTool({
+    name: "buy_email_inbox_addon",
+    title: "Set inbox add-ons",
+    kind: "write",
+    description: `Set the TOTAL extra mailboxes and extra inbox storage on the active paid plan (absolute numbers, not additions: read get_email_plan first and add to the current values). Increases are charged now, prorated to the plan's end date, then renew with the plan; decreases must still fit what is in use. ${MONEY}`,
+    input: {
+      projectId,
+      extraMailboxes: exports_external.number().int().min(0).max(50).describe("Total extra mailboxes wanted (0-50)"),
+      extraStorageGb: exports_external.number().int().min(0).max(1000).describe("Total extra inbox storage in GB (0-1000)"),
+      dryRun: dryRun3,
+      idempotencyKey: idem2
+    },
+    run: (a, api2) => api2.email("POST", "/plan/addons", {
+      project: a.projectId,
+      body: { extraMailboxes: a.extraMailboxes, extraStorageGb: a.extraStorageGb },
+      query: { dryRun: a.dryRun ? "true" : undefined },
+      idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey)
+    })
   }),
   defineTool({
     name: "send_email",
@@ -36378,7 +36751,7 @@ var emailTools = [
 // src/tools/databases.ts
 var databaseId = exports_external.string().uuid().describe("Database id (from list_databases)");
 var environmentId = exports_external.string().uuid().describe("Environment id (from list_projects). Omit for the primary (production) branch.");
-var dryRun2 = exports_external.boolean().optional().describe("true = only check and show the result or price; nothing changes");
+var dryRun4 = exports_external.boolean().optional().describe("true = only check and show the result or price; nothing changes");
 var databaseTools = [
   defineTool({
     name: "list_database_plans",
@@ -36472,7 +36845,7 @@ var databaseTools = [
       minCu: exports_external.number().min(0.25).max(10).optional(),
       maxCu: exports_external.number().min(0.25).max(10).optional(),
       suspendTimeoutSeconds: exports_external.number().int().min(0).max(604800).optional().describe("0 = never suspend, or 60-604800"),
-      dryRun: dryRun2
+      dryRun: dryRun4
     },
     run: (a, api2) => api2.api("PATCH", `/databases/${a.databaseId}/settings`, {
       body: { minCu: a.minCu, maxCu: a.maxCu, suspendTimeoutSeconds: a.suspendTimeoutSeconds },
@@ -36484,7 +36857,7 @@ var databaseTools = [
     title: "Upgrade database plan / top up",
     kind: "write",
     description: "Buy a paid plan or top up credits. COSTS MONEY from the wallet: call with dryRun first, show price and wallet balance after, and get the user's explicit OK.",
-    input: { databaseId, plan: exports_external.string().describe("Plan code (e.g. STARTER) or id from list_database_plans"), dryRun: dryRun2, idempotencyKey: exports_external.string().max(128).optional() },
+    input: { databaseId, plan: exports_external.string().describe("Plan code (e.g. STARTER) or id from list_database_plans"), dryRun: dryRun4, idempotencyKey: exports_external.string().max(128).optional() },
     run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/upgrade`, { body: { plan: a.plan }, query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: a.idempotencyKey })
   }),
   defineTool({
@@ -36510,6 +36883,27 @@ var databaseTools = [
     description: "This period's compute (CU-hours), storage, history and network, plus the plan's remaining credits.",
     input: { databaseId },
     run: (a, api2) => api2.api("GET", `/databases/${a.databaseId}/usage`)
+  }),
+  defineTool({
+    name: "get_database_stats",
+    title: "Database live stats",
+    kind: "read",
+    description: "Live compute stats of an environment's branch over the last hours: CPU, memory, rows read/written, cache hit rate, connections. grouping min/hour/day sets the point size.",
+    input: {
+      databaseId,
+      environmentId: environmentId.optional(),
+      grouping: exports_external.enum(["min", "hour", "day"]).optional().describe("Default min"),
+      hours: exports_external.number().int().min(1).max(720).optional().describe("How far back, default 1")
+    },
+    run: (a, api2) => api2.api("GET", `/databases/${a.databaseId}/stats`, { query: { environmentId: a.environmentId, grouping: a.grouping, hours: a.hours } })
+  }),
+  defineTool({
+    name: "get_database_balance",
+    title: "Database credit balance",
+    kind: "read",
+    description: "Credit left on the paid plan: compute (CU-hours) and storage remaining. Zero on the free plan. Top up with upgrade_database.",
+    input: { databaseId },
+    run: (a, api2) => api2.api("GET", `/databases/${a.databaseId}/balance`)
   }),
   defineTool({
     name: "list_database_tables",
@@ -36550,23 +36944,276 @@ var databaseTools = [
     run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/query`, { body: { sql: a.sql, params: a.params, environmentId: a.environmentId } })
   }),
   defineTool({
+    name: "classify_database_sql",
+    title: "Classify SQL (no run)",
+    kind: "read",
+    description: "What a SQL statement is (command, e.g. select / update / drop) and whether it writes, WITHOUT running it. Call it before execute_database_sql to tell the user exactly what will change; readOnly statements go to query_database.",
+    input: { databaseId, sql: exports_external.string().min(1).max(1e4) },
+    run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/query/classify`, { body: { sql: a.sql } })
+  }),
+  defineTool({
     name: "execute_database_sql",
     title: "Execute SQL (writes)",
     kind: "destructive",
-    description: "Run a statement that changes data or schema (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP…). Show the statement and the target environment to the user and get explicit confirmation first; prefer a staging branch for migrations.",
+    description: "Run a statement that changes data or schema (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP…). First call classify_database_sql to see what the statement does (a read-only one belongs in query_database). Then show the statement, what it changes and the target environment to the user and get explicit confirmation; prefer a staging branch for migrations.",
     input: { databaseId, sql: exports_external.string().min(1).max(1e4), params: exports_external.array(exports_external.any()).max(100).optional(), environmentId: environmentId.optional() },
     run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/query`, { body: { sql: a.sql, params: a.params, environmentId: a.environmentId, allowWrite: true } })
   })
 ];
 
+// src/tools/account.ts
+var uid2 = (what) => exports_external.string().uuid().describe(`${what} id`);
+var limit2 = exports_external.number().int().min(1).max(100).optional();
+var offset = exports_external.number().int().min(0).max(1e5).optional();
+var ACCOUNT_KEY = "Needs a whole-account key (a key limited to one project gets 403 ACCOUNT_KEY_REQUIRED).";
+var accountTools = [
+  defineTool({
+    name: "get_wallet",
+    title: "Get wallet balance",
+    kind: "read",
+    description: `The account's wallet balance (IDR) that every purchase is paid from. Check it before buying something. ${ACCOUNT_KEY}`,
+    input: {},
+    run: (_a3, api2) => api2.api("GET", "/account/wallet")
+  }),
+  defineTool({
+    name: "list_wallet_transactions",
+    title: "List wallet transactions",
+    kind: "read",
+    description: `Wallet history, newest first: amount (negative = debit), source, description, date. Page with limit/offset (total is returned). ${ACCOUNT_KEY}`,
+    input: { limit: limit2, offset },
+    run: (a, api2) => api2.api("GET", "/account/wallet/transactions", { query: { limit: a.limit, offset: a.offset } })
+  }),
+  defineTool({
+    name: "list_invoices",
+    title: "List invoices",
+    kind: "read",
+    description: `Invoices of the account: number, title, amount (IDR), status (pending, paid, expired, ...), dates; a pending one has the customer's own paymentUrl. ${ACCOUNT_KEY}`,
+    input: {},
+    run: (_a3, api2) => api2.api("GET", "/account/invoices")
+  }),
+  defineTool({
+    name: "get_invoice",
+    title: "Get invoice",
+    kind: "read",
+    description: `One PAID invoice as document data: seller, customer, line and totals (409 INVOICE_NOT_PAID while unpaid). ${ACCOUNT_KEY}`,
+    input: { invoiceId: uid2("Invoice") },
+    run: (a, api2) => api2.api("GET", `/account/invoices/${a.invoiceId}`)
+  }),
+  defineTool({
+    name: "list_statements",
+    title: "List monthly statements",
+    kind: "read",
+    description: `Months (YYYY-MM) that have a monthly statement. ${ACCOUNT_KEY}`,
+    input: {},
+    run: (_a3, api2) => api2.api("GET", "/account/statements")
+  }),
+  defineTool({
+    name: "get_statement",
+    title: "Get monthly statement",
+    kind: "read",
+    description: `Monthly statement (WIB): what was paid, wallet charges, refunds and credits with totals, and the balance now. The current month is month to date (partial). ${ACCOUNT_KEY}`,
+    input: { month: exports_external.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).describe("YYYY-MM, e.g. 2026-09") },
+    run: (a, api2) => api2.api("GET", `/account/statements/${a.month}`)
+  }),
+  defineTool({
+    name: "list_notifications",
+    title: "List notifications",
+    kind: "read",
+    description: "In-app notifications, newest first (deploy results, renewals, low balance, ...). A project key sees its own project's only.",
+    input: { unreadOnly: exports_external.boolean().optional(), limit: limit2, offset },
+    run: (a, api2) => api2.api("GET", "/account/notifications", { query: { unreadOnly: a.unreadOnly ? "true" : undefined, limit: a.limit, offset: a.offset } })
+  }),
+  defineTool({
+    name: "get_unread_notification_count",
+    title: "Unread notification count",
+    kind: "read",
+    description: "How many notifications are unread.",
+    input: {},
+    run: (_a3, api2) => api2.api("GET", "/account/notifications/unread-count")
+  }),
+  defineTool({
+    name: "mark_notification_read",
+    title: "Mark notification read",
+    kind: "write",
+    idempotent: true,
+    description: "Mark one notification as read.",
+    input: { notificationId: uid2("Notification") },
+    run: (a, api2) => api2.api("POST", `/account/notifications/${a.notificationId}/read`)
+  }),
+  defineTool({
+    name: "mark_all_notifications_read",
+    title: "Mark all notifications read",
+    kind: "write",
+    idempotent: true,
+    description: "Mark every unread notification as read (a project key: its project's only). Ask the user first: they may want to read them in the dashboard.",
+    input: {},
+    run: (_a3, api2) => api2.api("POST", "/account/notifications/read-all")
+  }),
+  defineTool({
+    name: "get_project_activity",
+    title: "Project activity",
+    kind: "read",
+    description: "Activity feed of a project, newest first: who did what (action, entity, by the key owner or someone else / the system) and when. Filter by environmentId or action.",
+    input: {
+      projectId: uid2("Project"),
+      environmentId: uid2("Environment").optional(),
+      action: exports_external.string().regex(/^[a-z0-9_.:-]{1,64}$/).optional().describe("e.g. deploy, service.create"),
+      limit: limit2,
+      offset
+    },
+    run: (a, api2) => api2.api("GET", `/account/projects/${a.projectId}/activity`, { query: { environmentId: a.environmentId, action: a.action, limit: a.limit, offset: a.offset } })
+  }),
+  defineTool({
+    name: "list_support_tickets",
+    title: "List support tickets",
+    kind: "read",
+    description: `Support tickets of the account with subject, category, priority and status. ${ACCOUNT_KEY}`,
+    input: {},
+    run: (_a3, api2) => api2.api("GET", "/account/tickets")
+  }),
+  defineTool({
+    name: "get_support_ticket",
+    title: "Get support ticket",
+    kind: "read",
+    description: `One support ticket with its conversation (from: you or support). ${ACCOUNT_KEY}`,
+    input: { ticketId: uid2("Ticket") },
+    run: (a, api2) => api2.api("GET", `/account/tickets/${a.ticketId}`)
+  }),
+  defineTool({
+    name: "create_support_ticket",
+    title: "Open support ticket",
+    kind: "write",
+    description: `Open a ticket with Helipod support (at most 5 an hour; reply to an open ticket instead of opening another). Show the user the subject and message before sending, and never include passwords, API keys or other secrets. ${ACCOUNT_KEY}`,
+    input: {
+      subject: exports_external.string().min(3).max(255),
+      category: exports_external.enum(["billing", "technical", "feature_request", "other"]),
+      message: exports_external.string().min(10).max(1e4),
+      priority: exports_external.enum(["low", "normal", "high", "urgent"]).optional().describe("Default normal")
+    },
+    run: (a, api2) => api2.api("POST", "/account/tickets", { body: a })
+  }),
+  defineTool({
+    name: "reply_support_ticket",
+    title: "Reply to support ticket",
+    kind: "write",
+    description: `Add a message to an open ticket (409 TICKET_CLOSED when closed: open a new one). Never include secrets. ${ACCOUNT_KEY}`,
+    input: { ticketId: uid2("Ticket"), message: exports_external.string().min(1).max(1e4) },
+    run: (a, api2) => api2.api("POST", `/account/tickets/${a.ticketId}/messages`, { body: { message: a.message } })
+  }),
+  defineTool({
+    name: "close_support_ticket",
+    title: "Close support ticket",
+    kind: "write",
+    idempotent: true,
+    description: `Close a support ticket once the issue is solved (a closed ticket takes no more replies). Ask the user first. ${ACCOUNT_KEY}`,
+    input: { ticketId: uid2("Ticket") },
+    run: (a, api2) => api2.api("POST", `/account/tickets/${a.ticketId}/close`)
+  })
+];
+
+// src/tools/ai.ts
+var projectId2 = exports_external.string().uuid().optional().describe("Limit to one project (a project key is always limited to its own)");
+var keyId = exports_external.string().uuid().optional().describe("Limit to one AI key (id from list_ai_keys)");
+var model = exports_external.string().max(100).optional().describe("Limit to one model id");
+var dryRun5 = exports_external.boolean().optional().describe("true = only check and show the result; nothing is charged or changed");
+var ACCOUNT_KEY2 = "Needs a whole-account key (a key limited to one project gets 403 ACCOUNT_KEY_REQUIRED).";
+var aiTools = [
+  defineTool({
+    name: "list_ai_models",
+    title: "List AI models and prices",
+    kind: "read",
+    description: "Models available through the Helipod AI Gateway with the price this account pays (IDR per 1M input / cached / output tokens) and any promos running.",
+    input: {},
+    run: (_a3, api2) => api2.api("GET", "/ai/models")
+  }),
+  defineTool({
+    name: "get_ai_overview",
+    title: "AI balance overview",
+    kind: "read",
+    description: `AI balance (available, held, free credit, model-limited credit), wallet balance, top-up packs (id, amount, bonus), minimum top-up, tax and auto top-up settings. Use it before topup_ai_balance. ${ACCOUNT_KEY2}`,
+    input: {},
+    run: (_a3, api2) => api2.api("GET", "/ai/overview")
+  }),
+  defineTool({
+    name: "get_ai_usage",
+    title: "AI usage",
+    kind: "read",
+    description: "This month's AI spend by model, and request history (model, tokens, charge in IDR, latency, status), newest first; page with page/limit.",
+    input: { projectId: projectId2, keyId, model, limit: exports_external.number().int().min(1).max(100).optional(), page: exports_external.number().int().min(1).max(100).optional() },
+    run: (a, api2) => api2.api("GET", "/ai/usage", { query: { projectId: a.projectId, keyId: a.keyId, model: a.model, limit: a.limit, page: a.page } })
+  }),
+  defineTool({
+    name: "get_ai_metrics",
+    title: "AI metrics",
+    kind: "read",
+    description: "AI requests and spend over time (24h, 7d or 30d) with totals, the previous period and a per-model split.",
+    input: { projectId: projectId2, keyId, model, range: exports_external.enum(["24h", "7d", "30d"]).optional() },
+    run: (a, api2) => api2.api("GET", "/ai/metrics", { query: { projectId: a.projectId, keyId: a.keyId, model: a.model, range: a.range } })
+  }),
+  defineTool({
+    name: "list_ai_keys",
+    title: "List AI keys",
+    kind: "read",
+    description: "Active AI Gateway keys (name, prefix, project, allowed models, monthly spend limit, last used). Secrets are never returned; new keys are created in the dashboard.",
+    input: { projectId: projectId2 },
+    run: (a, api2) => api2.api("GET", "/ai/keys", { query: { projectId: a.projectId } })
+  }),
+  defineTool({
+    name: "revoke_ai_key",
+    title: "Revoke AI key",
+    kind: "destructive",
+    description: "Revoke an AI key permanently: every app using it stops working at once and it cannot be restored (a new key must be made in the dashboard and deployed). Name the key and get explicit confirmation.",
+    input: { keyId: exports_external.string().uuid().describe("AI key id from list_ai_keys") },
+    run: (a, api2) => api2.api("DELETE", `/ai/keys/${a.keyId}`)
+  }),
+  defineTool({
+    name: "topup_ai_balance",
+    title: "Top up AI balance",
+    kind: "write",
+    description: `Move money from the wallet to the AI balance, by pack (packId from get_ai_overview, may include a bonus) or by amount (IDR, at least minTopup). COSTS MONEY from the wallet. Call with dryRun=true first, tell the user the amount, bonus and balances after, and wait for an explicit yes before the real call. ${ACCOUNT_KEY2}`,
+    input: {
+      packId: exports_external.string().min(1).max(64).optional(),
+      amount: exports_external.number().min(1).max(1e9).optional().describe("IDR"),
+      dryRun: dryRun5,
+      idempotencyKey: exports_external.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real top-up. Generated when omitted; pass the same value when retrying so it is never charged twice")
+    },
+    run: (a, api2) => {
+      if (!!a.packId === (a.amount !== undefined))
+        throw new Error("Give packId or amount, not both.");
+      return api2.api("POST", "/ai/topup", {
+        body: { packId: a.packId, amount: a.amount },
+        query: { dryRun: a.dryRun ? "true" : undefined },
+        idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey)
+      });
+    }
+  }),
+  defineTool({
+    name: "set_ai_auto_topup",
+    title: "Set AI auto top-up",
+    kind: "write",
+    idempotent: true,
+    description: `Automatic top-up: when the AI balance falls below threshold (IDR), amount (IDR) is moved from the wallet. Enabling it COSTS MONEY later, without asking each time: call with dryRun=true first, tell the user the current and new settings, and wait for an explicit yes. enabled=false turns it off. ${ACCOUNT_KEY2}`,
+    input: {
+      enabled: exports_external.boolean(),
+      threshold: exports_external.number().min(1).optional().describe("Top up when the AI balance is below this (IDR)"),
+      amount: exports_external.number().min(1).optional().describe("How much to top up each time (IDR)"),
+      dryRun: dryRun5
+    },
+    run: (a, api2) => api2.api("PUT", "/ai/auto-topup", {
+      body: { enabled: a.enabled, threshold: a.threshold, amount: a.amount },
+      query: { dryRun: a.dryRun ? "true" : undefined }
+    })
+  })
+];
+
 // src/tools/general.ts
-var API_PREFIXES = ["/containers/", "/databases", "/vps", "/backup/", "/domains"];
+var API_PREFIXES = ["/containers/", "/databases", "/vps", "/backup/", "/domains", "/account/", "/ai/"];
 var generalTools = [
   defineTool({
     name: "helipod_request",
     title: "Call any Helipod API endpoint",
     kind: "destructive",
-    description: "Call an endpoint that has no dedicated tool, as documented at https://docs.helipod.io. api=core for the Container, Database, VPS and Domain APIs (paths like /vps/{id}/backup), api=email for the Email API (paths like /broadcasts). Prefer the dedicated tools; ask the user before any call that costs money or deletes something.",
+    description: "Call an endpoint that has no dedicated tool, as documented at https://docs.helipod.io. api=core for the Container, Database, VPS, Domain, Account and AI APIs (paths like /vps/{id}/backup, /account/wallet, /ai/usage), api=email for the Email API (paths like /broadcasts). Prefer the dedicated tools; ask the user before any call that costs money or deletes something.",
     input: {
       api: exports_external.enum(["core", "email"]),
       method: exports_external.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
@@ -36590,15 +37237,15 @@ var generalTools = [
 // src/server.ts
 var VERSION = "0.5.0";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
-- Start with list_projects to find projects and environment ids.
-- Anything that costs money (create/deploy/scale services, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains): run the dryRun or price lookup first, tell the user the cost in IDR and wait for an explicit yes.
-- Destructive tools (delete, terminate, reinstall, rollback, restore a backup, replace DNS, send a broadcast, execute_database_sql): confirm with the user and name what will be lost.
+- Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups) cover the AI gateway.
+- Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
+- Destructive tools (delete, terminate, reinstall, rollback, restore a backup, replace DNS, revoke a key, remove an SSH key or port forward, send a broadcast, execute_database_sql): confirm with the user and name what will be lost. Before execute_database_sql, run classify_database_sql.
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
 - Deploys and VPS actions run in the background: poll get_deployment / get_vps until they settle; on a failed deploy read get_deployment_logs.
-- Never print secrets (passwords, secret variable values) unless the user asks for them.
-- Errors come back as { status, code, error }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys), 402 means plan limit or low balance.
+- Never print secrets (passwords, secret variable values, secret files) unless the user asks for them. Domain owner details are personal data: use only what the user gave.
+- Errors come back as { status, code, error }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys; wallet, invoices, tickets and AI money need a whole-account key), 402 means plan limit or low balance.
 Docs: https://docs.helipod.io`;
-var ALL_TOOLS = [...containerTools, ...databaseTools, ...vpsTools, ...domainTools, ...emailTools, ...generalTools];
+var ALL_TOOLS = [...containerTools, ...databaseTools, ...vpsTools, ...domainTools, ...emailTools, ...accountTools, ...aiTools, ...generalTools];
 function createHelipodServer(config2) {
   const server = new McpServer({ name: "helipod", version: VERSION, title: "Helipod" }, { instructions: INSTRUCTIONS });
   const api2 = new HelipodClient({ userAgent: `helipod-mcp/${VERSION}`, ...config2 });

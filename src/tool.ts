@@ -48,3 +48,12 @@ export function register(server: McpServer, api: HelipodClient, defs: ToolDef<an
         });
     }
 }
+
+/**
+ * Idempotency-Key for a paid call: none on a dry run; the caller's own when given (so a retry is not charged twice),
+ * otherwise a fresh one, because the API refuses a real purchase without it.
+ */
+export function purchaseKey(dryRun: boolean | undefined, given: string | undefined) {
+    if (dryRun) return undefined;
+    return given ?? globalThis.crypto.randomUUID();
+}

@@ -2,7 +2,7 @@
  * client.ts — a small HTTP client for the Helipod public APIs.
  *
  * Two keys, two bases:
- *   - the Helipod API key (hel_…) for the VPS, Container and Domain APIs at https://api.helipod.io/api
+ *   - the Helipod API key (hel_…) for the VPS, Container, Database, Domain, Account and AI APIs at https://api.helipod.io/api
  *   - the email API key (also hel_…, made in the dashboard Email section) for https://mail.helipod.io/api/email
  * Every response uses the envelope { success, data } / { success: false, error, code }.
  */
@@ -40,7 +40,7 @@ export class HelipodClient {
     get hasApiKey() { return !!this.cfg.apiKey; }
     get hasEmailKey() { return !!this.cfg.emailApiKey; }
 
-    /** VPS, Container and Domain APIs. */
+    /** VPS, Container, Database, Domain, Account (/account) and AI (/ai) APIs: one base, one key. */
     api<T = unknown>(method: string, path: string, opts: { query?: Query; body?: unknown; idempotencyKey?: string; auth?: boolean } = {}) {
         if (opts.auth !== false && !this.cfg.apiKey) {
             throw new HelipodError(401, "NO_API_KEY", "HELIPOD_API_KEY is not set. Create a key in the Helipod dashboard: Project → Settings → API keys.");
@@ -53,7 +53,7 @@ export class HelipodClient {
      * when it has the Email API enabled. A whole-account key picks the project with `project`
      * (sent as X-Helipod-Project); a project key or an email key already belongs to one project.
      */
-    email<T = unknown>(method: string, path: string, opts: { query?: Query; body?: unknown; project?: string } = {}) {
+    email<T = unknown>(method: string, path: string, opts: { query?: Query; body?: unknown; project?: string; idempotencyKey?: string } = {}) {
         const key = this.cfg.emailApiKey || this.cfg.apiKey;
         if (!key) {
             throw new HelipodError(401, "NO_API_KEY", "No key set. Use HELIPOD_API_KEY with the Email API enabled (or HELIPOD_EMAIL_API_KEY). Create keys in the Helipod dashboard: Project → Settings → API keys.");

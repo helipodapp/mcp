@@ -1,5 +1,5 @@
 // Database API tools (managed Postgres): plans, databases, connection, branches per environment, compute settings,
-// upgrade, suspend/resume, usage, tables and SQL.
+// upgrade, suspend/resume, usage, stats, credit balance, tables and SQL (with a classify step before writes).
 import { z } from "zod";
 import { defineTool } from "../tool.js";
 
@@ -107,6 +107,22 @@ export const databaseTools = [
         run: (a, api) => api.api("GET", `/databases/${a.databaseId}/usage`),
     }),
     defineTool({
+        name: "get_database_stats", title: "Database live stats", kind: "read",
+        description: "Live compute stats of an environment's branch over the last hours: CPU, memory, rows read/written, cache hit rate, connections. grouping min/hour/day sets the point size.",
+        input: {
+            databaseId, environmentId: environmentId.optional(),
+            grouping: z.enum(["min", "hour", "day"]).optional().describe("Default min"),
+            hours: z.number().int().min(1).max(720).optional().describe("How far back, default 1"),
+        },
+        run: (a, api) => api.api("GET", `/databases/${a.databaseId}/stats`, { query: { environmentId: a.environmentId, grouping: a.grouping, hours: a.hours } }),
+    }),
+    defineTool({
+        name: "get_database_balance", title: "Database credit balance", kind: "read",
+        description: "Credit left on the paid plan: compute (CU-hours) and storage remaining. Zero on the free plan. Top up with upgrade_database.",
+        input: { databaseId },
+        run: (a, api) => api.api("GET", `/databases/${a.databaseId}/balance`),
+    }),
+    defineTool({
         name: "list_database_tables", title: "List database tables", kind: "read",
         description: "Tables and views in the public schema of an environment's branch.",
         input: { databaseId, environmentId: environmentId.optional() },
@@ -134,8 +150,14 @@ export const databaseTools = [
         run: (a, api) => api.api("POST", `/databases/${a.databaseId}/query`, { body: { sql: a.sql, params: a.params, environmentId: a.environmentId } }),
     }),
     defineTool({
+        name: "classify_database_sql", title: "Classify SQL (no run)", kind: "read",
+        description: "What a SQL statement is (command, e.g. select / update / drop) and whether it writes, WITHOUT running it. Call it before execute_database_sql to tell the user exactly what will change; readOnly statements go to query_database.",
+        input: { databaseId, sql: z.string().min(1).max(10000) },
+        run: (a, api) => api.api("POST", `/databases/${a.databaseId}/query/classify`, { body: { sql: a.sql } }),
+    }),
+    defineTool({
         name: "execute_database_sql", title: "Execute SQL (writes)", kind: "destructive",
-        description: "Run a statement that changes data or schema (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP…). Show the statement and the target environment to the user and get explicit confirmation first; prefer a staging branch for migrations.",
+        description: "Run a statement that changes data or schema (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP…). First call classify_database_sql to see what the statement does (a read-only one belongs in query_database). Then show the statement, what it changes and the target environment to the user and get explicit confirmation; prefer a staging branch for migrations.",
         input: { databaseId, sql: z.string().min(1).max(10000), params: z.array(z.any()).max(100).optional(), environmentId: environmentId.optional() },
         run: (a, api) => api.api("POST", `/databases/${a.databaseId}/query`, { body: { sql: a.sql, params: a.params, environmentId: a.environmentId, allowWrite: true } }),
     }),

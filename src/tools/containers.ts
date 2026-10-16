@@ -1,4 +1,5 @@
-// Container API tools: projects, services, deploys, variables, domains, scale, volumes, logs, templates.
+// Container API tools: projects, environments, shared variables, services, deploys, variables, domains, scale, volumes,
+// function code, secret files, logs, templates.
 import { z } from "zod";
 import { defineTool } from "../tool.js";
 
@@ -25,6 +26,64 @@ export const containerTools = [
         description: "One project with its environments (ids and names). Use it to find an environmentId when you already know the project.",
         input: { projectId: id("Project") },
         run: (a, api) => api.api("GET", `${C}/projects/${a.projectId}`),
+    }),
+    defineTool({
+        name: "create_project", title: "Create project", kind: "write",
+        description: "Create a project (free) with its default production environment. Needs a whole-account key (a key limited to one project gets 403). Pass an idempotencyKey when retrying.",
+        input: { name: z.string().min(3).max(100), description: z.string().max(500).optional(), idempotencyKey: idem },
+        run: (a, api) => api.api("POST", `${C}/projects`, { body: { name: a.name, description: a.description }, idempotencyKey: a.idempotencyKey }),
+    }),
+    defineTool({
+        name: "update_project", title: "Rename project", kind: "write", idempotent: true,
+        description: "Change a project's name and/or description.",
+        input: { projectId: id("Project"), name: z.string().min(3).max(100).optional(), description: z.string().max(500).optional() },
+        run: (a, api) => api.api("PATCH", `${C}/projects/${a.projectId}`, { body: { name: a.name, description: a.description } }),
+    }),
+    defineTool({
+        name: "delete_project", title: "Delete project", kind: "destructive",
+        description: "Delete an EMPTY project and its environments and shared variables. Irreversible. Refused (409 PROJECT_NOT_EMPTY) while it still has services, databases, VPS or other resources: those must be deleted first. Needs a whole-account key. Only after the user confirms; confirm must be the project's exact name.",
+        input: { projectId: id("Project"), confirm: z.string().max(255).describe("The project name, exactly") },
+        run: (a, api) => api.api("DELETE", `${C}/projects/${a.projectId}`, { body: { confirm: a.confirm } }),
+    }),
+    defineTool({
+        name: "create_environment", title: "Create environment", kind: "write",
+        description: "Add an environment (e.g. staging) to a project. Free; services in it are billed as usual once deployed.",
+        input: { projectId: id("Project"), name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,49}$/).describe("1-50 characters: letters, digits, space _ . -") },
+        run: (a, api) => api.api("POST", `${C}/projects/${a.projectId}/environments`, { body: { name: a.name } }),
+    }),
+    defineTool({
+        name: "rename_environment", title: "Rename environment", kind: "write", idempotent: true,
+        description: "Rename an environment (names are unique within the project).",
+        input: { environmentId: id("Environment"), name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,49}$/) },
+        run: (a, api) => api.api("PATCH", `${C}/environments/${a.environmentId}`, { body: { name: a.name } }),
+    }),
+    defineTool({
+        name: "delete_environment", title: "Delete environment", kind: "destructive",
+        description: "Delete an EMPTY environment (409 ENVIRONMENT_NOT_EMPTY while it has services: delete them first). Irreversible. Only after the user confirms; confirm must be the environment's exact name.",
+        input: { environmentId: id("Environment"), confirm: z.string().max(255).describe("The environment name, exactly") },
+        run: (a, api) => api.api("DELETE", `${C}/environments/${a.environmentId}`, { body: { confirm: a.confirm } }),
+    }),
+    defineTool({
+        name: "list_project_variables", title: "List shared project variables", kind: "read",
+        description: "Variables shared by every service of a project (referenced as ${{shared.KEY}}). Secret values are never returned (value is null).",
+        input: { projectId: id("Project") },
+        run: (a, api) => api.api("GET", `${C}/projects/${a.projectId}/variables`),
+    }),
+    defineTool({
+        name: "set_project_variables", title: "Set shared project variables", kind: "write", idempotent: true,
+        description: "Create or update shared project variables (other keys are kept). Mark credentials as secrets (once secret, always secret). Services pick them up on their next deploy.",
+        input: {
+            projectId: id("Project"),
+            variables: z.record(z.string().max(255), z.string()).describe("KEY: value pairs"),
+            secrets: z.array(z.string().max(255)).max(100).optional().describe("Keys to store as secrets (write-only)"),
+        },
+        run: (a, api) => api.api("PUT", `${C}/projects/${a.projectId}/variables`, { body: { variables: a.variables, secrets: a.secrets } }),
+    }),
+    defineTool({
+        name: "delete_project_variable", title: "Delete shared project variable", kind: "destructive",
+        description: "Remove one shared project variable. Services that reference it lose it on their next deploy: check with the user.",
+        input: { projectId: id("Project"), key: z.string().max(255) },
+        run: (a, api) => api.api("DELETE", `${C}/projects/${a.projectId}/variables/${encodeURIComponent(a.key)}`),
     }),
     defineTool({
         name: "list_services", title: "List services", kind: "read",
@@ -77,19 +136,20 @@ export const containerTools = [
         },
     }),
     defineTool({
-        name: "update_service", title: "Update service settings", kind: "write", idempotent: true,
-        description: "Change start command, root directory, health check or startup dependencies. Applies on the next deploy (needsRedeploy).",
+        name: "update_service", title: "Update / rename service", kind: "write", idempotent: true,
+        description: "Rename a service or change its start command, root directory, health check or startup dependencies. Settings apply on the next deploy (needsRedeploy). Renaming breaks references like ${{oldName.KEY}} in other services' variables: show the user the returned warnings and fix those variables (set_variables / set_project_variables) before redeploying.",
         input: {
             serviceId: id("Service"),
-            startCommand: z.string().nullable().optional().describe("null removes the override"),
-            rootDirectory: z.string().nullable().optional(),
-            healthcheckPath: z.string().nullable().optional().describe("null removes the health check"),
+            name: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,39}$/).optional().describe("New service name (letters, digits, _ -; starts with a letter; unique in the environment)"),
+            startCommand: z.string().max(1000).nullable().optional().describe("null removes the override"),
+            rootDirectory: z.string().max(255).nullable().optional(),
+            healthcheckPath: z.string().max(255).nullable().optional().describe("null removes the health check"),
             healthcheckTimeout: z.number().int().min(1).max(3600).optional(),
-            dependsOn: z.array(z.string().uuid()).optional().describe("Service ids (same environment) to wait for at startup"),
+            dependsOn: z.array(z.string().uuid()).max(20).optional().describe("Service ids (same environment) to wait for at startup"),
         },
         run: (a, api) => api.api("PATCH", `${C}/services/${a.serviceId}`, {
             body: {
-                startCommand: a.startCommand, rootDirectory: a.rootDirectory, dependsOn: a.dependsOn,
+                name: a.name, startCommand: a.startCommand, rootDirectory: a.rootDirectory, dependsOn: a.dependsOn,
                 healthcheck: a.healthcheckPath === null ? null : a.healthcheckPath ? { path: a.healthcheckPath, timeout: a.healthcheckTimeout } : undefined,
             },
         }),
@@ -218,6 +278,76 @@ export const containerTools = [
         description: "Remove a volume; its data is lost on the next deploy. Confirm with the user first.",
         input: { serviceId: id("Service"), volumeId: id("Volume") },
         run: (a, api) => api.api("DELETE", `${C}/services/${a.serviceId}/volumes/${a.volumeId}`),
+    }),
+    defineTool({
+        name: "resize_volume", title: "Resize volume", kind: "write",
+        description: "Change a volume's size (1-50 GB; never below the space already used). A larger volume COSTS MONEY: it raises the daily cost, charged pro rata when the service is redeployed and in full from the next renewal. Call with dryRun=true first, show currentDailyCost vs newDailyCost (IDR) and wait for the user's yes. Applies on the next deploy.",
+        input: {
+            serviceId: id("Service"), volumeId: id("Volume"),
+            sizeGb: z.number().int().min(1).max(50).optional().describe("New size in GB (give sizeGb or sizeMb)"),
+            sizeMb: z.number().int().min(1024).max(51200).multipleOf(1024).optional().describe("New size in MB, a multiple of 1024"),
+            dryRun,
+        },
+        run: (a, api) => {
+            if ((a.sizeGb === undefined) === (a.sizeMb === undefined)) throw new Error("Give exactly one of sizeGb or sizeMb.");
+            return api.api("PATCH", `${C}/services/${a.serviceId}/volumes/${a.volumeId}`, {
+                query: { dryRun: a.dryRun ? "true" : undefined }, body: { sizeGb: a.sizeGb, sizeMb: a.sizeMb },
+            });
+        },
+    }),
+    defineTool({
+        name: "update_service_domain_port", title: "Change domain target port", kind: "write", idempotent: true,
+        description: "Point an existing domain of a service (from list_service_domains) at another container port. Applies on the next deploy when needsRedeploy is true.",
+        input: { serviceId: id("Service"), domainId: id("Domain"), port: z.number().int().min(1).max(65535) },
+        run: (a, api) => api.api("PATCH", `${C}/services/${a.serviceId}/domains/${a.domainId}`, { body: { port: a.port } }),
+    }),
+    defineTool({
+        name: "get_function_code", title: "Get function source", kind: "read",
+        description: "Source code of a function service (409 NOT_A_FUNCTION for other services).",
+        input: { serviceId: id("Service") },
+        run: (a, api) => api.api("GET", `${C}/services/${a.serviceId}/function`),
+    }),
+    defineTool({
+        name: "set_function_code", title: "Save function source", kind: "write", idempotent: true,
+        description: "Replace the whole source code of a function service (up to 512 KB). The previous code is overwritten: read get_function_code first when editing. Runs after the next deploy (deploy_service).",
+        input: { serviceId: id("Service"), code: z.string().min(1).max(512 * 1024) },
+        run: (a, api) => api.api("PUT", `${C}/services/${a.serviceId}/function`, { body: { code: a.code } }),
+    }),
+    defineTool({
+        name: "list_secret_files", title: "List secret files", kind: "read",
+        description: "Secret files mounted into a service (name, file name, mount path). Contents are write-only and never returned.",
+        input: { serviceId: id("Service") },
+        run: (a, api) => api.api("GET", `${C}/services/${a.serviceId}/files`),
+    }),
+    defineTool({
+        name: "add_secret_file", title: "Add secret file", kind: "write",
+        description: "Upload a file (certificate, key, credentials JSON, config) that is mounted read-only into the service at mountPath. Content is base64 of the file's bytes, at most 10 MB; it is stored as a secret and can never be read back. Applies on the next deploy. Don't echo the contents in chat.",
+        input: {
+            serviceId: id("Service"),
+            fileName: z.string().min(1).max(200).describe("e.g. service-account.json"),
+            mountPath: z.string().regex(/^\/[A-Za-z0-9._\/@+-]{0,254}$/).describe("Absolute path in the container, e.g. /etc/secrets/service-account.json"),
+            contentBase64: z.string().min(4).max(14_000_000).describe("The file's bytes in standard base64"),
+            name: z.string().max(255).optional().describe("Label shown in the dashboard"),
+        },
+        run: ({ serviceId, ...body }, api) => api.api("POST", `${C}/services/${serviceId}/files`, { body }),
+    }),
+    defineTool({
+        name: "update_secret_file", title: "Update secret file", kind: "write", idempotent: true,
+        description: "Replace a secret file's contents (base64) and/or change its mount path or label. The old contents are overwritten. Applies on the next deploy.",
+        input: {
+            serviceId: id("Service"), fileId: id("File"),
+            contentBase64: z.string().min(4).max(14_000_000).optional(),
+            fileName: z.string().min(1).max(200).optional(),
+            mountPath: z.string().regex(/^\/[A-Za-z0-9._\/@+-]{0,254}$/).optional(),
+            name: z.string().max(255).optional(),
+        },
+        run: ({ serviceId, fileId, ...body }, api) => api.api("PUT", `${C}/services/${serviceId}/files/${fileId}`, { body }),
+    }),
+    defineTool({
+        name: "delete_secret_file", title: "Delete secret file", kind: "destructive",
+        description: "Delete a secret file; it is gone from the service after the next deploy and cannot be recovered (contents are never readable). Confirm with the user.",
+        input: { serviceId: id("Service"), fileId: id("File") },
+        run: (a, api) => api.api("DELETE", `${C}/services/${a.serviceId}/files/${a.fileId}`),
     }),
     defineTool({
         name: "get_service_logs", title: "Get runtime logs", kind: "read",

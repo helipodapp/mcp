@@ -1,9 +1,11 @@
-// Domain API tools: search, prices, WHOIS, register/transfer/renew, DNS, nameservers, child nameservers, WHOIS privacy.
+// Domain API tools: search, prices, WHOIS, owner details, register/transfer/renew (with dry runs), DNS, nameservers, child nameservers, WHOIS privacy.
 import { z } from "zod";
 import { defineTool } from "../tool.js";
 
 const domainId = z.number().int().positive().describe("Domain id (number, from list_my_domains)");
 const hostId = z.number().int().positive().describe("Child nameserver id (from list_child_nameservers)");
+const dryRun = z.boolean().optional().describe("true = return the exact price (IDR, VAT included) and the wallet balance after it; nothing is charged or registered");
+const DRY = "Call with dryRun=true first, tell the user the price and walletBalanceAfter, and wait for an explicit yes before the real call.";
 const record = z.object({
     name: z.string().describe('"@" for the domain itself, or a label like "www"'),
     type: z.enum(["A", "AAAA", "MX", "MXE", "CNAME", "SPF", "TXT"]),
@@ -38,31 +40,52 @@ export const domainTools = [
     }),
     defineTool({
         name: "check_registrant", title: "Check owner details", kind: "read",
-        description: "Whether the account's domain owner details are complete (required before the first registration; completed in the dashboard).",
+        description: "Whether the account's domain owner details are complete (required before the first registration) and which fields are missing. Fill them with update_registrant.",
         input: {},
         run: (_a, api) => api.api("GET", "/domains/registrant"),
     }),
     defineTool({
+        name: "update_registrant", title: "Update owner details", kind: "write", idempotent: true,
+        description: "Set the account's domain owner (registrant) details the registrar needs: name, phone, addressLine1, city, state, countryCode and postalCode are required for a complete profile (organization, addressLine2 and fax are optional). Send only fields to change. This is personal data: use only what the user gave you, never invent or guess it, and don't repeat it back needlessly. The answer says whether the details are now complete and which fields are still missing (it never echoes them).",
+        input: {
+            name: z.string().min(1).max(255).optional().describe("Owner's full name"),
+            organization: z.string().max(255).optional().describe("Company / organization (optional)"),
+            phone: z.string().min(9).max(20).optional().describe("Phone number, 9-20 characters, e.g. +6281234567890"),
+            addressLine1: z.string().max(500).optional().describe("Street address"),
+            addressLine2: z.string().max(500).optional(),
+            city: z.string().max(100).optional(),
+            state: z.string().max(100).optional().describe("State / province"),
+            countryCode: z.string().regex(/^[A-Z]{2}$/).optional().describe("ISO 3166-1 alpha-2, e.g. ID"),
+            postalCode: z.string().max(20).optional(),
+            fax: z.string().max(50).optional(),
+        },
+        run: (a, api) => {
+            if (!Object.values(a).some(v => v !== undefined)) throw new Error("Send at least one field to change.");
+            return api.api("PATCH", "/domains/registrant", { body: a });
+        },
+    }),
+    defineTool({
         name: "register_domain", title: "Register domain", kind: "write",
-        description: "Register a domain for 1 year. COSTS MONEY from the wallet: check search_domain and domain_prices, tell the user the price (plus WHOIS privacy if wanted) and get explicit OK first.",
+        description: `Register a domain for 1 year. COSTS MONEY from the wallet. Check search_domain, and that the owner details are complete (check_registrant / update_registrant). ${DRY} The dry run includes WHOIS privacy when whoisProtection is true.`,
         input: {
             name: z.string().describe("Full domain, e.g. tokosaya.id"),
             nameservers: z.array(z.string()).min(2).max(5).optional(),
             whoisProtection: z.boolean().optional(),
+            dryRun,
         },
-        run: (a, api) => api.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection } }),
+        run: (a, api) => api.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection }, query: { dryRun: a.dryRun ? "true" : undefined } }),
     }),
     defineTool({
         name: "transfer_domain", title: "Transfer domain in", kind: "write",
-        description: "Transfer a domain from another registrar (adds 1 year). COSTS MONEY: show the transfer price and get the user's OK. Needs the domain's auth code.",
-        input: { name: z.string(), authCode: z.string(), nameservers: z.array(z.string()).min(2).max(5).optional() },
-        run: (a, api) => api.api("POST", "/domains/transfer", { body: { name: a.name, authCode: a.authCode, period: 1, nameservers: a.nameservers } }),
+        description: `Transfer a domain from another registrar (adds 1 year). COSTS MONEY from the wallet. Needs the domain's auth code. ${DRY}`,
+        input: { name: z.string(), authCode: z.string(), nameservers: z.array(z.string()).min(2).max(5).optional(), dryRun },
+        run: (a, api) => api.api("POST", "/domains/transfer", { body: { name: a.name, authCode: a.authCode, period: 1, nameservers: a.nameservers }, query: { dryRun: a.dryRun ? "true" : undefined } }),
     }),
     defineTool({
         name: "renew_domain", title: "Renew domain", kind: "write",
-        description: "Renew a domain for 1 year. COSTS MONEY: show the renewal price and get the user's OK.",
-        input: { domainId },
-        run: (a, api) => api.api("POST", `/domains/${a.domainId}/renew`, { body: { period: 1 } }),
+        description: `Renew a domain for 1 year (plus WHOIS privacy when it is on). COSTS MONEY from the wallet. ${DRY}`,
+        input: { domainId, dryRun },
+        run: (a, api) => api.api("POST", `/domains/${a.domainId}/renew`, { body: { period: 1 }, query: { dryRun: a.dryRun ? "true" : undefined } }),
     }),
     defineTool({
         name: "list_dns_records", title: "List DNS records", kind: "read",

@@ -2,7 +2,7 @@
 
 Use [Helipod](https://helipod.io) from AI coding tools: deploy apps and databases, run VPS servers, buy domains and edit DNS, and send email, by asking in plain language.
 
-- **MCP server** (`helipod-mcp`): 158 tools over the Container, Database, VPS, Domain and Email APIs. Works in Claude Code, Codex, Cursor, VS Code, Windsurf, Claude Desktop and any MCP client.
+- **MCP server** (`helipod-mcp`): 219 tools over the Container, Database, VPS, Domain, Email, Account and AI APIs. Works in Claude Code, Codex, Cursor, VS Code, Windsurf, Claude Desktop and any MCP client.
 - **Skills** (`skills/`): step-by-step playbooks so the agent deploys, prices and confirms the way Helipod expects (price first, confirm before deleting, read build logs on failure).
 
 Step-by-step guides for each tool (Claude Code, Codex, Cursor, VS Code, Gemini CLI, opencode, Windsurf, Claude Desktop, Cline and others): **https://docs.helipod.io/docs/helipod/ai-agents**
@@ -191,11 +191,13 @@ Pick your agents when asked (or pass `-a codex cursor gemini-cli opencode -y`). 
 
 | Area | Tools |
 |---|---|
-| Containers | projects, services (create from image, Git or Dockerfile), deploy, deployments and build logs, restart, variables, domains, scale, volumes, logs, metrics, templates, multi-service stacks |
-| Databases | managed Postgres: create, connection string, branches per environment, compute settings, plan upgrades, usage, tables, read-only queries and confirmed writes |
-| VPS | plans, create, power, reinstall, password, login details, terminate, renew, upgrade, auto-renew, firewall, snapshots |
-| Domains | search, prices, register, transfer, renew, DNS records, nameservers, WHOIS privacy |
-| Email | status, send, sent log, sending domains, templates, contacts |
+| Containers | projects and environments (create, rename, delete), shared project variables, services (create from image, Git or Dockerfile, rename), deploy, deployments and build logs, restart, variables, domains and their ports, scale, volumes (with resize), function code, secret files, logs, metrics, templates, multi-service stacks |
+| Databases | managed Postgres: create, connection string, branches per environment, compute settings, plan upgrades, usage, live stats, credit balance, tables, read-only queries, SQL classification and confirmed writes |
+| VPS | plans, create, rename, power, reinstall, password, login details, terminate, renew, upgrade options and upgrade, auto-renew, metrics, firewall, port forwarding, SSH keys and SSH on/off, snapshots, backups |
+| Domains | search, prices, owner details, register, transfer, renew (each with a dry run), DNS records, nameservers, child nameservers, WHOIS privacy |
+| Email | status, plan (buy, renew, change, inbox add-ons, with dry runs), send, sent log, sending domains, templates, contacts, segments, topics, broadcasts, suppressions, webhooks, inbox |
+| Account | wallet and transactions, invoices, monthly statements, notifications, project activity, support tickets |
+| AI | models and prices, balance, usage, metrics, AI keys (list, revoke), top-up and auto top-up |
 | Other | `helipod_request` for any other documented endpoint |
 
 Each tool is marked read-only, write or destructive, so clients can ask before running the risky ones. Calls that cost money support a dry run, and the server tells the agent to show the price and wait for your OK.
@@ -203,7 +205,7 @@ Each tool is marked read-only, write or destructive, so clients can ask before r
 ## Safety
 
 - The agent can only do what the key allows. Use a project-limited key and only the products you need.
-- Paid actions (new services, VPS, domains, scaling) charge your Helipod wallet. Keep tool approvals on for write and destructive tools.
+- Paid actions (new services, VPS, domains, scaling, email plans, AI top-ups) charge your Helipod wallet; the tools dry-run first and ask before the real call. Keep tool approvals on for write and destructive tools.
 - Revoke a key in the dashboard at any time.
 
 ## Configuration
