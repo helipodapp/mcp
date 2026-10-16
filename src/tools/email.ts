@@ -33,7 +33,7 @@ const AUDIENCE = "Before it goes out, tell the user how many people it reaches: 
 export const emailTools = [
     defineTool({
         name: "email_status", title: "Email status", kind: "read",
-        description: "Email service of the key's project: plan, usage today and this month, limits, counts.",
+        description: "Email service of the key's project: plan, usage today and this month, limits, counts. activated false = email is not set up yet: start it with buy_email_plan.",
         input: { projectId },
         run: (a, api) => api.email("GET", "/status", { project: a.projectId }),
     }),
@@ -51,7 +51,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "buy_email_plan", title: "Buy email plan", kind: "write",
-        description: `Start an email plan for the project (a free plan activates without charge). ${MONEY} The dry run's mode says purchase, activate_free or already_active.`,
+        description: `Start an email plan for the project (a free plan activates without charge). Works for a project with no email yet: the real call also sets email up (result.setup). ${MONEY} The dry run's mode says purchase, activate_free or already_active.`,
         input: { projectId, planCode, months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]).optional().describe("Billing cycle, default 1"), dryRun, idempotencyKey: idem },
         run: (a, api) => api.email("POST", "/plan", {
             project: a.projectId, body: { planCode: a.planCode, months: a.months },

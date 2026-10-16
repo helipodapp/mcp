@@ -36113,7 +36113,7 @@ var emailTools = [
     name: "email_status",
     title: "Email status",
     kind: "read",
-    description: "Email service of the key's project: plan, usage today and this month, limits, counts.",
+    description: "Email service of the key's project: plan, usage today and this month, limits, counts. activated false = email is not set up yet: start it with buy_email_plan.",
     input: { projectId },
     run: (a, api2) => api2.email("GET", "/status", { project: a.projectId })
   }),
@@ -36137,7 +36137,7 @@ var emailTools = [
     name: "buy_email_plan",
     title: "Buy email plan",
     kind: "write",
-    description: `Start an email plan for the project (a free plan activates without charge). ${MONEY} The dry run's mode says purchase, activate_free or already_active.`,
+    description: `Start an email plan for the project (a free plan activates without charge). Works for a project with no email yet: the real call also sets email up (result.setup). ${MONEY} The dry run's mode says purchase, activate_free or already_active.`,
     input: { projectId, planCode, months: exports_external.union([exports_external.literal(1), exports_external.literal(3), exports_external.literal(6), exports_external.literal(12)]).optional().describe("Billing cycle, default 1"), dryRun: dryRun3, idempotencyKey: idem2 },
     run: (a, api2) => api2.email("POST", "/plan", {
       project: a.projectId,
@@ -37235,15 +37235,16 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.0";
+var VERSION = "0.5.1";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
 - Destructive tools (delete, terminate, reinstall, rollback, restore a backup, replace DNS, revoke a key, remove an SSH key or port forward, send a broadcast, execute_database_sql): confirm with the user and name what will be lost. Before execute_database_sql, run classify_database_sql.
+- Email: when a project has no email yet (email_status shows activated false) or its plan ended, start it with buy_email_plan (dryRun first; the FREE plan costs nothing, still confirm). That also sets email up for the project; then add and verify a sending domain.
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
 - Deploys and VPS actions run in the background: poll get_deployment / get_vps until they settle; on a failed deploy read get_deployment_logs.
 - Never print secrets (passwords, secret variable values, secret files) unless the user asks for them. Domain owner details are personal data: use only what the user gave.
-- Errors come back as { status, code, error }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys; wallet, invoices, tickets and AI money need a whole-account key), 402 means plan limit or low balance.
+- Errors come back as { status, code, error }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys; wallet, invoices, tickets and AI money need a whole-account key: with a sign-in, reconnect and choose Whole account), 402 means plan limit or low balance.
 Docs: https://docs.helipod.io`;
 var ALL_TOOLS = [...containerTools, ...databaseTools, ...vpsTools, ...domainTools, ...emailTools, ...accountTools, ...aiTools, ...generalTools];
 function createHelipodServer(config2) {
