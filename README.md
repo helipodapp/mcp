@@ -20,7 +20,7 @@ Start with a key limited to one project while you try things out.
 
 ## 2. Connect your tool
 
-The server runs with `npx -y github:helipodapp/mcp` (Node.js 18 or newer). Every config below starts it that way and passes `HELIPOD_API_KEY` from your environment.
+The server is the npm package `helipod-mcp` (Node.js 18 or newer). The configs below run it with `npx -y helipod-mcp` (or the installed `helipod-mcp` command) and pass `HELIPOD_API_KEY` from your environment.
 
 ### Claude Code (plugin: MCP server + skills)
 
@@ -32,17 +32,22 @@ The server runs with `npx -y github:helipodapp/mcp` (Node.js 18 or newer). Every
 MCP server only:
 
 ```sh
-claude mcp add helipod --env HELIPOD_API_KEY=$HELIPOD_API_KEY -- npx -y github:helipodapp/mcp
+claude mcp add helipod --env HELIPOD_API_KEY=$HELIPOD_API_KEY -- npx -y helipod-mcp
 ```
 
 ### Codex
+
+Install once (Codex does not wait for MCP servers to start, so an installed server is ready for the first message while `npx` can miss it):
+
+```sh
+npm install -g helipod-mcp
+```
 
 `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.helipod]
-command = "npx"
-args = ["-y", "github:helipodapp/mcp"]
+command = "helipod-mcp"
 env_vars = ["HELIPOD_API_KEY", "HELIPOD_EMAIL_API_KEY"]
 ```
 
@@ -55,7 +60,7 @@ env_vars = ["HELIPOD_API_KEY", "HELIPOD_EMAIL_API_KEY"]
   "mcpServers": {
     "helipod": {
       "command": "npx",
-      "args": ["-y", "github:helipodapp/mcp"],
+      "args": ["-y", "helipod-mcp"],
       "env": { "HELIPOD_API_KEY": "${env:HELIPOD_API_KEY}" }
     }
   }
@@ -71,7 +76,7 @@ env_vars = ["HELIPOD_API_KEY", "HELIPOD_EMAIL_API_KEY"]
   "mcpServers": {
     "helipod": {
       "command": "npx",
-      "args": ["-y", "github:helipodapp/mcp"],
+      "args": ["-y", "helipod-mcp"],
       "env": { "HELIPOD_API_KEY": "$HELIPOD_API_KEY" }
     }
   }
@@ -89,7 +94,7 @@ Gemini CLI only starts MCP servers in folders you have trusted.
   "mcp": {
     "helipod": {
       "type": "local",
-      "command": ["npx", "-y", "github:helipodapp/mcp"],
+      "command": ["npx", "-y", "helipod-mcp"],
       "environment": { "HELIPOD_API_KEY": "{env:HELIPOD_API_KEY}" }
     }
   }
@@ -107,7 +112,7 @@ Gemini CLI only starts MCP servers in folders you have trusted.
     "helipod": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "github:helipodapp/mcp"],
+      "args": ["-y", "helipod-mcp"],
       "env": { "HELIPOD_API_KEY": "${input:helipod-key}" }
     }
   }
@@ -123,7 +128,7 @@ Gemini CLI only starts MCP servers in folders you have trusted.
   "mcpServers": {
     "helipod": {
       "command": "npx",
-      "args": ["-y", "github:helipodapp/mcp"],
+      "args": ["-y", "helipod-mcp"],
       "env": { "HELIPOD_API_KEY": "hel_..." }
     }
   }
@@ -132,7 +137,7 @@ Gemini CLI only starts MCP servers in folders you have trusted.
 
 ### Other clients
 
-Run `npx -y github:helipodapp/mcp` as a stdio MCP server with `HELIPOD_API_KEY` (and optionally `HELIPOD_EMAIL_API_KEY`) in its environment.
+Run `npx -y helipod-mcp` as a stdio MCP server with `HELIPOD_API_KEY` (and optionally `HELIPOD_EMAIL_API_KEY`) in its environment.
 
 ## Hosted server (nothing to install)
 
