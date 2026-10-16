@@ -24,7 +24,7 @@ Start with a key limited to one project while you try things out.
 
 ```sh
 /plugin marketplace add helipodapp/mcp
-/plugin install helipod@helipod
+/plugin install helipod@mcp
 ```
 
 The plugin reads `HELIPOD_API_KEY` and `HELIPOD_EMAIL_API_KEY` from your environment.
