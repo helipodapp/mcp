@@ -12,7 +12,7 @@ import { emailTools } from "./tools/email.js";
 import { databaseTools } from "./tools/databases.js";
 import { generalTools } from "./tools/general.js";
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.3.1";
 
 export const INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids.

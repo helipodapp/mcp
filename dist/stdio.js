@@ -34872,7 +34872,11 @@ class HelipodClient {
     return this.request(this.emailApiUrl, this.cfg.emailApiKey, method, path, opts);
   }
   async request(base, key, method, path, opts) {
-    const url2 = new URL(base + (path.startsWith("/") ? path : `/${path}`));
+    const raw = path.startsWith("/") ? path : `/${path}`;
+    if (/(^|\/)\.\.?(\/|$)|[?#\\]|\/\/|%2e|%2f|%5c/i.test(raw)) {
+      throw new HelipodError(400, "INVALID_PATH", "An id in this request contains characters that are not allowed.");
+    }
+    const url2 = new URL(base + raw);
     for (const [k, v] of Object.entries(opts.query ?? {}))
       if (v !== undefined && v !== null && v !== "")
         url2.searchParams.set(k, String(v));
@@ -35861,7 +35865,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.3.0";
+var VERSION = "0.3.1";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids.
 - Anything that costs money (create/deploy/scale services, upgrade a database plan, create/renew/upgrade VPS, register/renew/transfer domains): run the dryRun or price lookup first, tell the user the cost in IDR and wait for an explicit yes.

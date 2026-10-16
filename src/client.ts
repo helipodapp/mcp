@@ -57,7 +57,13 @@ export class HelipodClient {
     }
 
     private async request<T>(base: string, key: string | undefined, method: string, path: string, opts: { query?: Query; body?: unknown; idempotencyKey?: string }): Promise<T> {
-        const url = new URL(base + (path.startsWith("/") ? path : `/${path}`));
+        const raw = path.startsWith("/") ? path : `/${path}`;
+        // An id with "/", "..", "?" or "#" in it (from a model or a crafted document) would turn one tool's request
+        // into another endpoint's. Every path a tool builds is plain segments, so anything else is refused.
+        if (/(^|\/)\.\.?(\/|$)|[?#\\]|\/\/|%2e|%2f|%5c/i.test(raw)) {
+            throw new HelipodError(400, "INVALID_PATH", "An id in this request contains characters that are not allowed.");
+        }
+        const url = new URL(base + raw);
         for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
         const headers: Record<string, string> = { accept: "application/json", "user-agent": this.cfg.userAgent ?? "helipod-mcp" };
         if (key) headers.authorization = `Bearer ${key}`;
