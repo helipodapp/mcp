@@ -4,6 +4,7 @@ import { z } from "zod";
 import { containerTools } from "../src/tools/containers.js";
 import { vpsTools } from "../src/tools/vps.js";
 import { domainTools } from "../src/tools/domains.js";
+import { databaseTools } from "../src/tools/databases.js";
 import { emailTools } from "../src/tools/email.js";
 import { generalTools } from "../src/tools/general.js";
 import type { ToolDef } from "../src/tool.js";
@@ -12,6 +13,7 @@ const out = process.argv[2] ?? new URL("../../docs-helipod/content/docs/helipod/
 
 const GROUPS: [string, string, ToolDef<any>[]][] = [
     ["Containers", "Container API key scope. Projects, services, deployments, variables, domains, scaling, volumes, logs, templates.", containerTools],
+    ["Databases", "Database API key scope. Managed Postgres: databases, connection, branches per environment, compute, plans, SQL.", databaseTools],
     ["VPS", "VPS API key scope.", vpsTools],
     ["Domains", "Domain API key scope (a whole-account key). `search_domain` and `domain_prices` need no key.", domainTools],
     ["Email", "Uses the email API key (`HELIPOD_EMAIL_API_KEY`).", emailTools],

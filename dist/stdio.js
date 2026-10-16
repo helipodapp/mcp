@@ -35662,14 +35662,184 @@ var emailTools = [
   })
 ];
 
+// src/tools/databases.ts
+var databaseId = exports_external.string().uuid().describe("Database id (from list_databases)");
+var environmentId = exports_external.string().uuid().describe("Environment id (from list_projects). Omit for the primary (production) branch.");
+var dryRun2 = exports_external.boolean().optional().describe("true = only check and show the result or price; nothing changes");
+var databaseTools = [
+  defineTool({
+    name: "list_database_plans",
+    title: "List database plans",
+    kind: "read",
+    description: "Managed Postgres plans: price (IDR), included compute hours and storage, maximum CU. Free is the default; paid plans are prepaid credits that never expire.",
+    input: {},
+    run: (_a3, api2) => api2.api("GET", "/databases/plans")
+  }),
+  defineTool({
+    name: "list_databases",
+    title: "List databases",
+    kind: "read",
+    description: "Managed Postgres databases in the projects this key can reach: status, plan and remaining credits, region, branches per environment.",
+    input: {},
+    run: (_a3, api2) => api2.api("GET", "/databases")
+  }),
+  defineTool({
+    name: "get_database",
+    title: "Get database",
+    kind: "read",
+    description: "One database with its plan, compute settings and branches.",
+    input: { databaseId },
+    run: (a, api2) => api2.api("GET", `/databases/${a.databaseId}`)
+  }),
+  defineTool({
+    name: "create_database",
+    title: "Create database",
+    kind: "write",
+    idempotent: true,
+    description: "Create the managed Postgres database of a project (free plan; one database per project, one branch per environment). Returns the existing one if the project already has it.",
+    input: { projectId: exports_external.string().uuid(), idempotencyKey: exports_external.string().max(128).optional() },
+    run: (a, api2) => api2.api("POST", "/databases", { body: { projectId: a.projectId }, idempotencyKey: a.idempotencyKey })
+  }),
+  defineTool({
+    name: "delete_database",
+    title: "Delete database",
+    kind: "destructive",
+    description: "Delete a database with ALL its data and branches. Irreversible. Only after the user confirms; confirm must be the database name.",
+    input: { databaseId, confirm: exports_external.string().describe("The database name, exactly") },
+    run: (a, api2) => api2.api("DELETE", `/databases/${a.databaseId}`, { body: { confirm: a.confirm } })
+  }),
+  defineTool({
+    name: "get_database_connection",
+    title: "Get database connection",
+    kind: "read",
+    description: "Connection string (postgresql://…, pooled, SSL) and its parts for an environment's branch. Contains the password: store it as a secret variable (e.g. DATABASE_URL via set_variables secrets), never print it unless asked.",
+    input: { databaseId, environmentId: environmentId.optional() },
+    run: (a, api2) => api2.api("GET", `/databases/${a.databaseId}/connection`, { query: { environmentId: a.environmentId } })
+  }),
+  defineTool({
+    name: "list_database_branches",
+    title: "List database branches",
+    kind: "read",
+    description: "Branches of a database, one per environment (production is the primary).",
+    input: { databaseId },
+    run: (a, api2) => api2.api("GET", `/databases/${a.databaseId}/branches`)
+  }),
+  defineTool({
+    name: "create_database_branch",
+    title: "Create database branch",
+    kind: "write",
+    idempotent: true,
+    description: "Give an environment (e.g. staging) its own branch: a copy of the source environment's data at this moment (the primary when omitted).",
+    input: { databaseId, environmentId: exports_external.string().uuid(), sourceEnvironmentId: exports_external.string().uuid().optional() },
+    run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/branches`, { body: { environmentId: a.environmentId, sourceEnvironmentId: a.sourceEnvironmentId } })
+  }),
+  defineTool({
+    name: "delete_database_branch",
+    title: "Delete database branch",
+    kind: "destructive",
+    description: "Delete an environment's branch and its data. The primary (production) branch cannot be deleted. Confirm with the user.",
+    input: { databaseId, environmentId: exports_external.string().uuid() },
+    run: (a, api2) => api2.api("DELETE", `/databases/${a.databaseId}/branches/${a.environmentId}`)
+  }),
+  defineTool({
+    name: "get_database_settings",
+    title: "Get database compute settings",
+    kind: "read",
+    description: "Compute settings (paid plans): minCu (floor), maxCu (autoscaling ceiling), suspendTimeoutSeconds (idle time before scaling to zero), the plan's maximum CU.",
+    input: { databaseId },
+    run: (a, api2) => api2.api("GET", `/databases/${a.databaseId}/settings`)
+  }),
+  defineTool({
+    name: "update_database_settings",
+    title: "Update database compute settings",
+    kind: "write",
+    description: "Change compute for every branch (paid plans). A minCu above zero keeps compute running and uses credits while idle: run with dryRun first and show idleComputeHoursPerMonth.",
+    input: {
+      databaseId,
+      minCu: exports_external.number().min(0.25).max(10).optional(),
+      maxCu: exports_external.number().min(0.25).max(10).optional(),
+      suspendTimeoutSeconds: exports_external.number().int().min(0).max(604800).optional().describe("0 = never suspend, or 60-604800"),
+      dryRun: dryRun2
+    },
+    run: (a, api2) => api2.api("PATCH", `/databases/${a.databaseId}/settings`, {
+      body: { minCu: a.minCu, maxCu: a.maxCu, suspendTimeoutSeconds: a.suspendTimeoutSeconds },
+      query: { dryRun: a.dryRun ? "true" : undefined }
+    })
+  }),
+  defineTool({
+    name: "upgrade_database",
+    title: "Upgrade database plan / top up",
+    kind: "write",
+    description: "Buy a paid plan or top up credits. COSTS MONEY from the wallet: call with dryRun first, show price and wallet balance after, and get the user's explicit OK.",
+    input: { databaseId, plan: exports_external.string().describe("Plan code (e.g. STARTER) or id from list_database_plans"), dryRun: dryRun2, idempotencyKey: exports_external.string().max(128).optional() },
+    run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/upgrade`, { body: { plan: a.plan }, query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: a.idempotencyKey })
+  }),
+  defineTool({
+    name: "suspend_database",
+    title: "Suspend database",
+    kind: "destructive",
+    description: "Stop the database's compute (connections fail until resumed). Confirm with the user.",
+    input: { databaseId },
+    run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/suspend`)
+  }),
+  defineTool({
+    name: "resume_database",
+    title: "Resume database",
+    kind: "write",
+    description: "Start a suspended database again.",
+    input: { databaseId },
+    run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/resume`)
+  }),
+  defineTool({
+    name: "get_database_usage",
+    title: "Database usage",
+    kind: "read",
+    description: "This period's compute (CU-hours), storage, history and network, plus the plan's remaining credits.",
+    input: { databaseId },
+    run: (a, api2) => api2.api("GET", `/databases/${a.databaseId}/usage`)
+  }),
+  defineTool({
+    name: "list_database_tables",
+    title: "List database tables",
+    kind: "read",
+    description: "Tables and views in the public schema of an environment's branch.",
+    input: { databaseId, environmentId: environmentId.optional() },
+    run: (a, api2) => api2.api("GET", `/databases/${a.databaseId}/tables`, { query: { environmentId: a.environmentId } })
+  }),
+  defineTool({
+    name: "describe_database_table",
+    title: "Describe database table",
+    kind: "read",
+    description: "Columns of a table (name, type, nullable, default).",
+    input: { databaseId, table: exports_external.string().min(1).max(63), environmentId: environmentId.optional() },
+    run: (a, api2) => api2.api("GET", `/databases/${a.databaseId}/tables/${encodeURIComponent(a.table)}/columns`, { query: { environmentId: a.environmentId } })
+  }),
+  defineTool({
+    name: "query_database",
+    title: "Query database (read-only)",
+    kind: "read",
+    description: "Run a read-only SQL statement (SELECT, EXPLAIN, SHOW…) in a read-only transaction; up to 200 rows. Use $1, $2… placeholders with params. Statements that change data are refused: use execute_database_sql.",
+    input: { databaseId, sql: exports_external.string().min(1).max(1e4), params: exports_external.array(exports_external.any()).max(100).optional(), environmentId: environmentId.optional() },
+    run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/query`, { body: { sql: a.sql, params: a.params, environmentId: a.environmentId } })
+  }),
+  defineTool({
+    name: "execute_database_sql",
+    title: "Execute SQL (writes)",
+    kind: "destructive",
+    description: "Run a statement that changes data or schema (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP…). Show the statement and the target environment to the user and get explicit confirmation first; prefer a staging branch for migrations.",
+    input: { databaseId, sql: exports_external.string().min(1).max(1e4), params: exports_external.array(exports_external.any()).max(100).optional(), environmentId: environmentId.optional() },
+    run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/query`, { body: { sql: a.sql, params: a.params, environmentId: a.environmentId, allowWrite: true } })
+  })
+];
+
 // src/tools/general.ts
-var API_PREFIXES = ["/containers/", "/vps", "/backup/", "/domains"];
+var API_PREFIXES = ["/containers/", "/databases", "/vps", "/backup/", "/domains"];
 var generalTools = [
   defineTool({
     name: "helipod_request",
     title: "Call any Helipod API endpoint",
     kind: "destructive",
-    description: "Call an endpoint that has no dedicated tool, as documented at https://docs.helipod.io. api=core for the VPS, Container and Domain APIs (paths like /vps/{id}/backup), api=email for the Email API (paths like /broadcasts). Prefer the dedicated tools; ask the user before any call that costs money or deletes something.",
+    description: "Call an endpoint that has no dedicated tool, as documented at https://docs.helipod.io. api=core for the Container, Database, VPS and Domain APIs (paths like /vps/{id}/backup), api=email for the Email API (paths like /broadcasts). Prefer the dedicated tools; ask the user before any call that costs money or deletes something.",
     input: {
       api: exports_external.enum(["core", "email"]),
       method: exports_external.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
@@ -35691,16 +35861,17 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.2.0";
-var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
+var VERSION = "0.3.0";
+var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids.
-- Anything that costs money (create/deploy/scale services, create/renew/upgrade VPS, register/renew/transfer domains): run the dryRun or price lookup first, tell the user the cost in IDR and wait for an explicit yes.
-- Destructive tools (delete, terminate, reinstall, rollback, replace DNS): confirm with the user and name what will be lost.
+- Anything that costs money (create/deploy/scale services, upgrade a database plan, create/renew/upgrade VPS, register/renew/transfer domains): run the dryRun or price lookup first, tell the user the cost in IDR and wait for an explicit yes.
+- Destructive tools (delete, terminate, reinstall, rollback, replace DNS, execute_database_sql): confirm with the user and name what will be lost.
+- Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
 - Deploys and VPS actions run in the background: poll get_deployment / get_vps until they settle; on a failed deploy read get_deployment_logs.
 - Never print secrets (passwords, secret variable values) unless the user asks for them.
 - Errors come back as { status, code, error }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys), 402 means plan limit or low balance.
 Docs: https://docs.helipod.io`;
-var ALL_TOOLS = [...containerTools, ...vpsTools, ...domainTools, ...emailTools, ...generalTools];
+var ALL_TOOLS = [...containerTools, ...databaseTools, ...vpsTools, ...domainTools, ...emailTools, ...generalTools];
 function createHelipodServer(config2) {
   const server = new McpServer({ name: "helipod", version: VERSION, title: "Helipod" }, { instructions: INSTRUCTIONS });
   const api2 = new HelipodClient({ userAgent: `helipod-mcp/${VERSION}`, ...config2 });

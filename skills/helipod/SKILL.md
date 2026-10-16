@@ -5,13 +5,13 @@ description: Use when the user mentions Helipod (helipod.io) or wants to work wi
 
 # Helipod
 
-Helipod is a cloud platform in Indonesia: containers (deploy apps from Git, images or Dockerfiles), VPS, domain registration and DNS, email sending, and an AI gateway. Everything is billed from a prepaid wallet in Rupiah (IDR).
+Helipod is a cloud platform in Indonesia: containers (deploy apps from Git, images or Dockerfiles), managed Postgres databases, VPS, domain registration and DNS, email sending, and an AI gateway. Everything is billed from a prepaid wallet in Rupiah (IDR).
 
 ## Access
 
 - **MCP tools** (preferred): if tools like `list_projects`, `create_service`, `list_vps_plans` are available, use them.
 - **Without MCP**: call the HTTP API with `Authorization: Bearer $HELIPOD_API_KEY`.
-  - VPS, Container, Domain APIs: `https://api.helipod.io/api` (`/containers/...`, `/vps/...`, `/domains/...`)
+  - Container, Database, VPS, Domain APIs: `https://api.helipod.io/api` (`/containers/...`, `/databases/...`, `/vps/...`, `/domains/...`)
   - Email API: `https://mail.helipod.io/api/email` with `$HELIPOD_EMAIL_API_KEY` (a separate email key)
   - AI gateway: `https://ai.helipod.io/v1` with a `hel_ai_...` key (OpenAI and Anthropic compatible)
 - Keys are created in the dashboard: Project → Settings → API keys. A key is limited to the products and project chosen there; `403 SCOPE_NOT_ALLOWED` means the key lacks that product, `404` on an id means it is outside the key's reach.
@@ -29,7 +29,8 @@ Helipod is a cloud platform in Indonesia: containers (deploy apps from Git, imag
 
 | Task | Skill |
 |---|---|
-| Deploy an app or database, env vars, domains, scaling, logs | `helipod-deploy` |
+| Deploy an app, env vars, domains, scaling, logs | `helipod-deploy` |
+| Managed Postgres: create, connect, branches, SQL, plans | `helipod-databases` |
 | Servers with root access | `helipod-vps` |
 | Buy a domain, DNS, point a domain at an app | `helipod-domains` |
 | Send email from an app | `helipod-email` |

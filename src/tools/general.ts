@@ -2,12 +2,12 @@
 import { z } from "zod";
 import { defineTool } from "../tool.js";
 
-const API_PREFIXES = ["/containers/", "/vps", "/backup/", "/domains"];
+const API_PREFIXES = ["/containers/", "/databases", "/vps", "/backup/", "/domains"];
 
 export const generalTools = [
     defineTool({
         name: "helipod_request", title: "Call any Helipod API endpoint", kind: "destructive",
-        description: "Call an endpoint that has no dedicated tool, as documented at https://docs.helipod.io. api=core for the VPS, Container and Domain APIs (paths like /vps/{id}/backup), api=email for the Email API (paths like /broadcasts). Prefer the dedicated tools; ask the user before any call that costs money or deletes something.",
+        description: "Call an endpoint that has no dedicated tool, as documented at https://docs.helipod.io. api=core for the Container, Database, VPS and Domain APIs (paths like /vps/{id}/backup), api=email for the Email API (paths like /broadcasts). Prefer the dedicated tools; ask the user before any call that costs money or deletes something.",
         input: {
             api: z.enum(["core", "email"]),
             method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
