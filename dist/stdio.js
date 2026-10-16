@@ -34925,7 +34925,7 @@ function register(server, api2, defs) {
       annotations: {
         title: d.title,
         readOnlyHint: d.kind === "read",
-        destructiveHint: d.kind === "destructive",
+        destructiveHint: d.kind !== "read",
         idempotentHint: d.kind === "read" || !!d.idempotent,
         openWorldHint: true
       }
@@ -37210,16 +37210,14 @@ var aiTools = [
 var API_PREFIXES = ["/containers/", "/databases", "/vps", "/backup/", "/domains", "/account/", "/ai/"];
 var generalTools = [
   defineTool({
-    name: "helipod_request",
-    title: "Call any Helipod API endpoint",
-    kind: "destructive",
-    description: "Call an endpoint that has no dedicated tool, as documented at https://docs.helipod.io. api=core for the Container, Database, VPS, Domain, Account and AI APIs (paths like /vps/{id}/backup, /account/wallet, /ai/usage), api=email for the Email API (paths like /broadcasts). Prefer the dedicated tools; ask the user before any call that costs money or deletes something.",
+    name: "helipod_api_get",
+    title: "Read any Helipod API endpoint",
+    kind: "read",
+    description: "GET an endpoint of the Helipod public API that has no dedicated read tool (Helipod API reference: https://docs.helipod.io/docs/helipod). api=core for the Container, Database, VPS, Domain, Account and AI APIs (paths like /vps/{id}/backup/runs, /account/wallet, /ai/usage), api=email for the Email API (paths like /broadcasts). Read only: it never changes anything.",
     input: {
       api: exports_external.enum(["core", "email"]),
-      method: exports_external.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
-      path: exports_external.string().regex(/^\/[A-Za-z0-9/_.\-:]*$/).describe("Path after the base URL, e.g. /vps/abc/backup"),
-      query: exports_external.record(exports_external.string(), exports_external.string()).optional(),
-      body: exports_external.record(exports_external.string(), exports_external.any()).optional()
+      path: exports_external.string().regex(/^\/[A-Za-z0-9/_.\-:]*$/).describe("Path after the base URL, e.g. /vps/abc/backup/runs"),
+      query: exports_external.record(exports_external.string(), exports_external.string()).optional()
     },
     run: (a, api2) => {
       if (a.path.includes(".."))
@@ -37227,15 +37225,15 @@ var generalTools = [
       if (a.api === "core") {
         if (!API_PREFIXES.some((p) => a.path.startsWith(p)))
           throw new Error(`Core API paths start with one of: ${API_PREFIXES.join(", ")}`);
-        return api2.api(a.method, a.path, { query: a.query, body: a.body });
+        return api2.api("GET", a.path, { query: a.query });
       }
-      return api2.email(a.method, a.path, { query: a.query, body: a.body });
+      return api2.email("GET", a.path, { query: a.query });
     }
   })
 ];
 
 // src/server.ts
-var VERSION = "0.5.1";
+var VERSION = "0.5.2";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.

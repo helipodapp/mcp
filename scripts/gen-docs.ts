@@ -48,7 +48,9 @@ The [Helipod MCP server](/docs/helipod/ai-agents) has ${GROUPS.reduce((n, g) => 
 
 - **read-only** tools never change anything.
 - **write** tools create or change something. Tools marked *costs money* charge your Helipod wallet; the server tells the agent to show the price and wait for your OK first.
-- **destructive** tools delete or overwrite. Clients that support MCP tool hints ask before running them.
+- **destructive** tools delete or overwrite something.
+
+Only read-only tools are marked safe to run without asking: every write and destructive tool carries the MCP destructive hint, so clients that support tool hints (Claude, for example) ask before each change.
 
 Errors come back as \`{ status, code, error }\` with the same codes as the API, see [Requests and errors](/docs/helipod/requests-and-errors).
 `;

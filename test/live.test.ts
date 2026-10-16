@@ -32,6 +32,13 @@ describe("tool catalog", () => {
         expect(byName.delete_service.annotations?.destructiveHint).toBe(true);
         expect(byName.terminate_vps.annotations?.destructiveHint).toBe(true);
         for (const n of ["restore_vps_backup", "send_email_broadcast", "disable_whois_privacy"]) expect(byName[n].annotations?.destructiveHint).toBe(true);
+        // Claude connectors directory rules: title on every tool, reads and writes in separate tools, every change flagged.
+        for (const t of tools) {
+            expect(t.name.length).toBeLessThanOrEqual(64);
+            expect(t.annotations?.title || t.title).toBeTruthy();
+            expect(t.annotations?.destructiveHint).toBe(!t.annotations?.readOnlyHint);
+            expect(Object.keys((t.inputSchema as any)?.properties ?? {})).not.toContain("method");
+        }
         for (const n of ["create_service", "deploy_service", "create_vps", "register_domain", "renew_vps", "activate_vps_backup"]) expect(byName[n].description).toMatch(/COSTS MONEY/);
     });
     test("money tools dry-run first, deletes are destructive, new routes are covered", async () => {
@@ -105,12 +112,12 @@ describe("tool catalog", () => {
         expect(seen[6].method).toBe("DELETE");
         expect(seen[7].body).toEqual({ confirm: "My app" });
     });
-    test("helipod_request reaches the Account and AI APIs", async () => {
+    test("helipod_api_get reaches the Account and AI APIs", async () => {
         const urls: string[] = [];
         const fake = (async (url: URL) => { urls.push(String(url)); return new Response(JSON.stringify({ success: true, data: {} })); }) as unknown as typeof fetch;
         const c = await connect({ apiKey: "hel_x", fetch: fake });
         for (const path of ["/account/wallet", "/ai/usage"]) {
-            const r: any = await c.callTool({ name: "helipod_request", arguments: { api: "core", method: "GET", path } });
+            const r: any = await c.callTool({ name: "helipod_api_get", arguments: { api: "core", path } });
             expect(r.isError).toBeFalsy();
         }
         expect(urls).toEqual(["https://api.helipod.io/api/account/wallet", "https://api.helipod.io/api/ai/usage"]);
@@ -140,9 +147,9 @@ describe("errors an agent can act on", () => {
         expect(r.isError).toBe(true);
         expect(json(r).status).toBe(401);
     });
-    test("helipod_request refuses paths outside the APIs", async () => {
+    test("helipod_api_get refuses paths outside the APIs", async () => {
         const c = await connect({ apiKey: "hel_x" });
-        const r: any = await c.callTool({ name: "helipod_request", arguments: { api: "core", method: "GET", path: "/internal/cache" } });
+        const r: any = await c.callTool({ name: "helipod_api_get", arguments: { api: "core", path: "/internal/cache" } });
         expect(r.isError).toBe(true);
     });
     test("create_service needs exactly one source", async () => {

@@ -25,4 +25,4 @@ Follow the `helipod` skill rules. A VPS is prepaid per period: creating one char
 - Billing: `get_vps_renewal_options` → `renew_vps`; `upgrade_vps` to a larger plan (charges the difference, restarts); `toggle_vps_auto_renew`.
 - Terminate: `terminate_vps` is permanent, no refund: confirm explicitly.
 
-Backups (paid add-on) and anything else: `helipod_request` with paths from https://docs.helipod.io/docs/vps-api
+Backups (paid add-on) have dedicated tools; to read anything else use `helipod_api_get` with paths from https://docs.helipod.io/docs/vps-api

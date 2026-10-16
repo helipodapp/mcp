@@ -198,7 +198,7 @@ Pick your agents when asked (or pass `-a codex cursor gemini-cli opencode -y`). 
 | Email | status, plan (buy, renew, change, inbox add-ons, with dry runs), send, sent log, sending domains, templates, contacts, segments, topics, broadcasts, suppressions, webhooks, inbox |
 | Account | wallet and transactions, invoices, monthly statements, notifications, project activity, support tickets |
 | AI | models and prices, balance, usage, metrics, AI keys (list, revoke), top-up and auto top-up |
-| Other | `helipod_request` for any other documented endpoint |
+| Other | `helipod_api_get` to read any other documented endpoint (read only) |
 
 Each tool is marked read-only, write or destructive, so clients can ask before running the risky ones. Calls that cost money support a dry run, and the server tells the agent to show the price and wait for your OK.
 

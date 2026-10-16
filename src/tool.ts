@@ -30,7 +30,9 @@ export function register(server: McpServer, api: HelipodClient, defs: ToolDef<an
             annotations: {
                 title: d.title,
                 readOnlyHint: d.kind === "read",
-                destructiveHint: d.kind === "destructive",
+                // Every change counts as destructive for clients (it modifies a live cloud account, often for money):
+                // Claude and others then ask before each one. kind still tells writes from deletes in the text.
+                destructiveHint: d.kind !== "read",
                 idempotentHint: d.kind === "read" || !!d.idempotent,
                 openWorldHint: true,
             },
