@@ -7,6 +7,22 @@ Use [Helipod](https://helipod.io) from AI coding tools: deploy apps and database
 
 Step-by-step guides for each tool (Claude Code, Codex, Cursor, VS Code, Gemini CLI, opencode, Windsurf, Claude Desktop, Cline and others): **https://docs.helipod.io/docs/helipod/ai-agents**
 
+## Quick start: sign in (no key)
+
+Add the hosted server and sign in to Helipod in the browser; you choose which products (Container, VPS, Domain API) and which project the tool may use, and can disconnect it any time in **Settings → API keys → Connected apps**.
+
+| Tool | Add | Sign in |
+|---|---|---|
+| Claude Code | `/plugin marketplace add helipodapp/mcp` then `/plugin install helipod@mcp` (or `claude mcp add --transport http helipod https://api.helipod.io/mcp`) | `/mcp` → helipod → Authenticate |
+| Codex | `[mcp_servers.helipod]` `url = "https://api.helipod.io/mcp"` in `~/.codex/config.toml` | `codex mcp login helipod` |
+| Cursor | `{"mcpServers":{"helipod":{"url":"https://api.helipod.io/mcp"}}}` in `~/.cursor/mcp.json` | Settings → MCP → Needs login |
+| opencode | `{"mcp":{"helipod":{"type":"remote","url":"https://api.helipod.io/mcp"}}}` | `opencode mcp auth helipod` |
+| Gemini CLI | `{"mcpServers":{"helipod":{"httpUrl":"https://api.helipod.io/mcp"}}}` | `/mcp auth helipod` |
+| VS Code | `{"servers":{"helipod":{"type":"http","url":"https://api.helipod.io/mcp"}}}` in `.vscode/mcp.json` | prompted when the server starts |
+| Claude.ai, ChatGPT | Add a custom connector with the URL `https://api.helipod.io/mcp` | prompted when connecting |
+
+Prefer a key, a local server, or a tool not listed? Read on.
+
 ## 1. Get a key
 
 In the [dashboard](https://helipod.io/project) open a project, then **Settings → API keys**. Choose the products (Container API, VPS API, Domain API) and the reach (one project, or the whole account; the Domain API needs a whole-account key). The key starts with `hel_`.
@@ -24,14 +40,9 @@ Start with a key limited to one project while you try things out.
 
 The server is the npm package `helipod-mcp` (Node.js 18 or newer). The configs below run it with `npx -y helipod-mcp` (or the installed `helipod-mcp` command) and pass `HELIPOD_API_KEY` from your environment.
 
-### Claude Code (plugin: MCP server + skills)
+### Claude Code
 
-```sh
-/plugin marketplace add helipodapp/mcp
-/plugin install helipod@mcp
-```
-
-MCP server only:
+The plugin (above) uses the hosted server with sign-in. Local server with a key instead:
 
 ```sh
 claude mcp add helipod --env HELIPOD_API_KEY=$HELIPOD_API_KEY -- npx -y helipod-mcp

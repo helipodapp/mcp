@@ -1,12 +1,8 @@
 {
   "mcpServers": {
     "helipod": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/stdio.js"],
-      "env": {
-        "HELIPOD_API_KEY": "${HELIPOD_API_KEY:-}",
-        "HELIPOD_EMAIL_API_KEY": "${HELIPOD_EMAIL_API_KEY:-}"
-      }
+      "type": "http",
+      "url": "https://api.helipod.io/mcp"
     }
   }
 }
