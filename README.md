@@ -134,6 +134,21 @@ Gemini CLI only starts MCP servers in folders you have trusted.
 
 Run `npx -y github:helipodapp/mcp` as a stdio MCP server with `HELIPOD_API_KEY` (and optionally `HELIPOD_EMAIL_API_KEY`) in its environment.
 
+## Hosted server (nothing to install)
+
+Clients that connect by URL can use `https://api.helipod.io/mcp` (Streamable HTTP) with `Authorization: Bearer hel_...` (and `X-Helipod-Email-Key` for the email tools). Same tools; the key is used per request and never stored.
+
+```sh
+claude mcp add --transport http helipod https://api.helipod.io/mcp --header "Authorization: Bearer $HELIPOD_API_KEY"
+```
+
+```toml
+# Codex: ~/.codex/config.toml
+[mcp_servers.helipod]
+url = "https://api.helipod.io/mcp"
+bearer_token_env_var = "HELIPOD_API_KEY"
+```
+
 ## Skills for other agents
 
 Claude Code gets the skills with the plugin. For Codex, Cursor, Gemini CLI, opencode, GitHub Copilot and other agents that read `SKILL.md` files:
