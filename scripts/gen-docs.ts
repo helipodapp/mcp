@@ -18,7 +18,7 @@ const GROUPS: [string, string, ToolDef<any>[]][] = [
     ["Databases", "Database API key scope. Managed Postgres: databases, connection, branches per environment, compute, plans, SQL.", databaseTools],
     ["VPS", "VPS API key scope.", vpsTools],
     ["Domains", "Domain API key scope (a whole-account key). `search_domain` and `domain_prices` need no key.", domainTools],
-    ["Email", "Uses the email API key (`HELIPOD_EMAIL_API_KEY`).", emailTools],
+    ["Email", "Email API key scope, or an email API key (`HELIPOD_EMAIL_API_KEY`). Plan purchases need an Idempotency-Key, which the tools send for you.", emailTools],
     ["Account", "Account API key scope. Wallet, invoices and tickets need a whole-account key.", accountTools],
     ["AI", "AI API key scope. Balance and top-ups need a whole-account key.", aiTools],
     ["Other", "", generalTools],
