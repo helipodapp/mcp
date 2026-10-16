@@ -21,6 +21,12 @@ export const containerTools = [
         run: (_a, api) => api.api("GET", `${C}/projects`),
     }),
     defineTool({
+        name: "get_project", title: "Get project", kind: "read",
+        description: "One project with its environments (ids and names). Use it to find an environmentId when you already know the project.",
+        input: { projectId: id("Project") },
+        run: (a, api) => api.api("GET", `${C}/projects/${a.projectId}`),
+    }),
+    defineTool({
         name: "list_services", title: "List services", kind: "read",
         description: "Services (containers) in an environment: status, source, resources, domains, latest deployment and daily cost.",
         input: { environmentId: id("Environment") },

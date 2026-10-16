@@ -31,7 +31,8 @@ describe("tool catalog", () => {
         expect(byName.list_services.annotations?.readOnlyHint).toBe(true);
         expect(byName.delete_service.annotations?.destructiveHint).toBe(true);
         expect(byName.terminate_vps.annotations?.destructiveHint).toBe(true);
-        for (const n of ["create_service", "deploy_service", "create_vps", "register_domain", "renew_vps"]) expect(byName[n].description).toMatch(/COSTS MONEY/);
+        for (const n of ["restore_vps_backup", "send_email_broadcast", "disable_whois_privacy"]) expect(byName[n].annotations?.destructiveHint).toBe(true);
+        for (const n of ["create_service", "deploy_service", "create_vps", "register_domain", "renew_vps", "activate_vps_backup"]) expect(byName[n].description).toMatch(/COSTS MONEY/);
     });
     test("server instructions are sent to the client", async () => {
         const c = await connect({ apiKey: "hel_x" });

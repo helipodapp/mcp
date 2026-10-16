@@ -1,10 +1,12 @@
-// VPS API tools: plans, servers, power, reinstall, credentials, billing, firewall, snapshots.
+// VPS API tools: plans, servers, power, reinstall, credentials, billing, firewall, snapshots, backups.
 import { z } from "zod";
 import { defineTool } from "../tool.js";
 
 const vpsId = z.string().describe("VPS id");
 const password = z.string().min(12).max(30).describe("12-30 characters with upper and lower case letters, a digit and one of ! @ # $ % ^ *");
 const period = z.enum(["monthly", "3month", "6month", "yearly"]);
+const pointId = z.string().describe("Restore point id (from list_vps_restore_points)");
+const backupPath = z.string().max(1024).describe("Absolute path inside the backup, e.g. /etc/nginx or /var/www/index.html");
 
 export const vpsTools = [
     defineTool({
@@ -136,5 +138,90 @@ export const vpsTools = [
         description: "Delete a snapshot permanently (it can no longer be rolled back to).",
         input: { snapshotId: z.string() },
         run: (a, api) => api.api("DELETE", `/vps/snapshots/${a.snapshotId}`),
+    }),
+    defineTool({
+        name: "list_backup_plans", title: "List VPS backup plans", kind: "read",
+        description: "Daily VPS backup plans: storage quota, priceMonthly and priceYearly (IDR), how many daily/weekly/monthly restore points are kept. Use it for the price before activate_vps_backup.",
+        input: {},
+        run: (_a, api) => api.api("GET", "/backup/plans"),
+    }),
+    defineTool({
+        name: "get_vps_backup", title: "Get VPS backup status", kind: "read",
+        description: "Backup of one server: plan, period and price, auto-renew, storage used vs quota, last backup, next run, manual runs left today, the job running now. null when backups are off; eligible/reason say whether this server can have them (Linux only).",
+        input: { vpsId },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/backup`),
+    }),
+    defineTool({
+        name: "activate_vps_backup", title: "Turn on VPS backups", kind: "write",
+        description: "Turn on daily backups for a running Linux server. COSTS MONEY right away: the whole period (1 or 12 months) is charged from the wallet and there is no dry run. Get priceMonthly / priceYearly from list_backup_plans, tell the user the price in IDR and wait for an explicit yes. The server must be running.",
+        input: {
+            vpsId, planCode: z.string().max(30).describe("Plan code from list_backup_plans"),
+            months: z.union([z.literal(1), z.literal(12)]).describe("1 = monthly, 12 = yearly"),
+            scheduleHour: z.number().int().min(0).max(23).optional().describe("Hour of the daily backup, 0-23 WIB (UTC+7)"),
+            alignWithVps: z.boolean().optional().describe("Monthly only: make the first period end with the server's own expiry (prorated price)"),
+        },
+        run: ({ vpsId: id, ...body }, api) => api.api("POST", `/vps/${id}/backup`, { body }),
+    }),
+    defineTool({
+        name: "update_vps_backup", title: "Change VPS backup plan / schedule", kind: "write",
+        description: "Change the backup plan, the daily hour or auto-renew. A larger plan COSTS MONEY now (the difference for the days left, charged from the wallet): show the new plan's price from list_backup_plans and get the user's OK. A smaller plan starts at the next renewal.",
+        input: {
+            vpsId, planCode: z.string().max(30).optional(),
+            scheduleHour: z.number().int().min(0).max(23).optional().describe("0-23 WIB (UTC+7)"),
+            autoRenew: z.boolean().optional(),
+        },
+        run: ({ vpsId: id, ...body }, api) => api.api("PATCH", `/vps/${id}/backup`, { body }),
+    }),
+    defineTool({
+        name: "cancel_vps_backup", title: "Cancel VPS backups", kind: "destructive",
+        description: "Stop renewing the server's backups. Backups keep running until the paid period ends; after that and a grace period the backups are DELETED and can no longer be restored. Confirm with the user. (update_vps_backup autoRenew=true undoes it before the end.)",
+        input: { vpsId },
+        run: (a, api) => api.api("DELETE", `/vps/${a.vpsId}/backup`),
+    }),
+    defineTool({
+        name: "run_vps_backup", title: "Back up VPS now", kind: "write",
+        description: "Start a backup now, in addition to the daily one (limited per day: see manualRunsLeft in get_vps_backup). Runs in the background: follow it with list_vps_backup_runs.",
+        input: { vpsId },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/backup/run`),
+    }),
+    defineTool({
+        name: "list_vps_backup_runs", title: "List VPS backup runs", kind: "read",
+        description: "Recent backup, restore and download jobs of a server with status, timing and errors.",
+        input: { vpsId },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/backup/runs`),
+    }),
+    defineTool({
+        name: "list_vps_restore_points", title: "List VPS restore points", kind: "read",
+        description: "Restore points (backups kept) of a server: id, time taken, kind (daily/weekly/monthly/manual), size added, file count.",
+        input: { vpsId },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/backup/points`),
+    }),
+    defineTool({
+        name: "browse_vps_backup_files", title: "Browse files in a backup", kind: "read",
+        description: "List the files and folders at a path inside a restore point (names, types, sizes, dates; not file contents). Use it to pick paths for restore_vps_backup or prepare_vps_backup_download.",
+        input: { vpsId, pointId, path: backupPath.optional().describe("Folder to list, default /") },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/backup/points/${a.pointId}/files`, { query: { path: a.path } }),
+    }),
+    defineTool({
+        name: "restore_vps_backup", title: "Restore VPS from backup", kind: "destructive",
+        description: "Restore from a restore point. mode=full puts the WHOLE disk back to that moment: everything written since is LOST and the server is offline while it restores. mode=files restores 1-50 paths: target=folder (default) puts them in a separate folder on the server, target=inplace OVERWRITES the current files. Name what will be overwritten and get explicit confirmation. Runs in the background: follow it with list_vps_backup_runs.",
+        input: {
+            vpsId, pointId, mode: z.enum(["files", "full"]),
+            paths: z.array(backupPath).min(1).max(50).optional().describe("mode=files: files or folders to restore"),
+            target: z.enum(["folder", "inplace"]).optional().describe("mode=files: folder (default, safe) or inplace (overwrite)"),
+        },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/backup/points/${a.pointId}/restore`, { body: { mode: a.mode, paths: a.paths, target: a.target } }),
+    }),
+    defineTool({
+        name: "prepare_vps_backup_download", title: "Prepare backup download", kind: "write",
+        description: "Pack up to 20 files or folders from a restore point into a download (a few per day). Returns a download id and status; poll get_vps_backup_download until status is ready, then give the user the link. Never fetch or print the file contents.",
+        input: { vpsId, pointId, paths: z.array(backupPath).min(1).max(20) },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/backup/points/${a.pointId}/download`, { body: { paths: a.paths } }),
+    }),
+    defineTool({
+        name: "get_vps_backup_download", title: "Get backup download link", kind: "read",
+        description: "Status of a prepared backup download; when ready, a short-lived url for the user to open (it expires at expiresAt). Give the user the link; do not download it yourself.",
+        input: { vpsId, downloadId: z.string() },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/backup/downloads/${a.downloadId}`),
     }),
 ];

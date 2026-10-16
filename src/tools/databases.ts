@@ -119,6 +119,15 @@ export const databaseTools = [
         run: (a, api) => api.api("GET", `/databases/${a.databaseId}/tables/${encodeURIComponent(a.table)}/columns`, { query: { environmentId: a.environmentId } }),
     }),
     defineTool({
+        name: "browse_database_table", title: "Browse table rows", kind: "read",
+        description: "Rows of a table, a page at a time (limit up to 200, offset to page). Read-only. Rows are the customer's data: don't repeat sensitive columns (passwords, tokens) unless the user asks.",
+        input: {
+            databaseId, table: z.string().min(1).max(63), environmentId: environmentId.optional(),
+            limit: z.number().int().min(1).max(200).optional(), offset: z.number().int().min(0).optional(),
+        },
+        run: (a, api) => api.api("GET", `/databases/${a.databaseId}/tables/${encodeURIComponent(a.table)}/rows`, { query: { environmentId: a.environmentId, limit: a.limit, offset: a.offset } }),
+    }),
+    defineTool({
         name: "query_database", title: "Query database (read-only)", kind: "read",
         description: "Run a read-only SQL statement (SELECT, EXPLAIN, SHOW…) in a read-only transaction; up to 200 rows. Use $1, $2… placeholders with params. Statements that change data are refused: use execute_database_sql.",
         input: { databaseId, sql: z.string().min(1).max(10000), params: z.array(z.any()).max(100).optional(), environmentId: environmentId.optional() },

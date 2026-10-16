@@ -12,12 +12,12 @@ import { emailTools } from "./tools/email.js";
 import { databaseTools } from "./tools/databases.js";
 import { generalTools } from "./tools/general.js";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 
 export const INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids.
-- Anything that costs money (create/deploy/scale services, upgrade a database plan, create/renew/upgrade VPS, register/renew/transfer domains): run the dryRun or price lookup first, tell the user the cost in IDR and wait for an explicit yes.
-- Destructive tools (delete, terminate, reinstall, rollback, replace DNS, execute_database_sql): confirm with the user and name what will be lost.
+- Anything that costs money (create/deploy/scale services, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains): run the dryRun or price lookup first, tell the user the cost in IDR and wait for an explicit yes.
+- Destructive tools (delete, terminate, reinstall, rollback, restore a backup, replace DNS, send a broadcast, execute_database_sql): confirm with the user and name what will be lost.
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
 - Deploys and VPS actions run in the background: poll get_deployment / get_vps until they settle; on a failed deploy read get_deployment_logs.
 - Never print secrets (passwords, secret variable values) unless the user asks for them.
