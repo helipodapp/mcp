@@ -48,15 +48,21 @@ export class HelipodClient {
         return this.request<T>(this.apiUrl, opts.auth === false ? undefined : this.cfg.apiKey, method, path, opts);
     }
 
-    /** Email API (its own key). */
-    email<T = unknown>(method: string, path: string, opts: { query?: Query; body?: unknown } = {}) {
-        if (!this.cfg.emailApiKey) {
-            throw new HelipodError(401, "NO_EMAIL_API_KEY", "HELIPOD_EMAIL_API_KEY is not set. Create an email API key in the Helipod dashboard Email section.");
+    /**
+     * Email API. An email key if one is set; otherwise the Helipod API key / sign-in token, which works
+     * when it has the Email API enabled. A whole-account key picks the project with `project`
+     * (sent as X-Helipod-Project); a project key or an email key already belongs to one project.
+     */
+    email<T = unknown>(method: string, path: string, opts: { query?: Query; body?: unknown; project?: string } = {}) {
+        const key = this.cfg.emailApiKey || this.cfg.apiKey;
+        if (!key) {
+            throw new HelipodError(401, "NO_API_KEY", "No key set. Use HELIPOD_API_KEY with the Email API enabled (or HELIPOD_EMAIL_API_KEY). Create keys in the Helipod dashboard: Project → Settings → API keys.");
         }
-        return this.request<T>(this.emailApiUrl, this.cfg.emailApiKey, method, path, opts);
+        const headers = !this.cfg.emailApiKey && opts.project ? { "x-helipod-project": opts.project } : undefined;
+        return this.request<T>(this.emailApiUrl, key, method, path, { ...opts, headers });
     }
 
-    private async request<T>(base: string, key: string | undefined, method: string, path: string, opts: { query?: Query; body?: unknown; idempotencyKey?: string }): Promise<T> {
+    private async request<T>(base: string, key: string | undefined, method: string, path: string, opts: { query?: Query; body?: unknown; idempotencyKey?: string; headers?: Record<string, string> }): Promise<T> {
         const raw = path.startsWith("/") ? path : `/${path}`;
         // An id with "/", "..", "?" or "#" in it (from a model or a crafted document) would turn one tool's request
         // into another endpoint's. Every path a tool builds is plain segments, so anything else is refused.
@@ -67,6 +73,7 @@ export class HelipodClient {
         for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
         const headers: Record<string, string> = { accept: "application/json", "user-agent": this.cfg.userAgent ?? "helipod-mcp" };
         if (key) headers.authorization = `Bearer ${key}`;
+        for (const [k, v] of Object.entries(opts.headers ?? {})) if (/^[0-9a-f-]{36}$/i.test(v)) headers[k] = v;
         if (opts.body !== undefined) headers["content-type"] = "application/json";
         if (opts.idempotencyKey) headers["idempotency-key"] = opts.idempotencyKey;
         let res: Response;

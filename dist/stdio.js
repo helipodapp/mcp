@@ -34866,10 +34866,12 @@ class HelipodClient {
     return this.request(this.apiUrl, opts.auth === false ? undefined : this.cfg.apiKey, method, path, opts);
   }
   email(method, path, opts = {}) {
-    if (!this.cfg.emailApiKey) {
-      throw new HelipodError(401, "NO_EMAIL_API_KEY", "HELIPOD_EMAIL_API_KEY is not set. Create an email API key in the Helipod dashboard Email section.");
+    const key = this.cfg.emailApiKey || this.cfg.apiKey;
+    if (!key) {
+      throw new HelipodError(401, "NO_API_KEY", "No key set. Use HELIPOD_API_KEY with the Email API enabled (or HELIPOD_EMAIL_API_KEY). Create keys in the Helipod dashboard: Project → Settings → API keys.");
     }
-    return this.request(this.emailApiUrl, this.cfg.emailApiKey, method, path, opts);
+    const headers = !this.cfg.emailApiKey && opts.project ? { "x-helipod-project": opts.project } : undefined;
+    return this.request(this.emailApiUrl, key, method, path, { ...opts, headers });
   }
   async request(base, key, method, path, opts) {
     const raw = path.startsWith("/") ? path : `/${path}`;
@@ -34883,6 +34885,9 @@ class HelipodClient {
     const headers = { accept: "application/json", "user-agent": this.cfg.userAgent ?? "helipod-mcp" };
     if (key)
       headers.authorization = `Bearer ${key}`;
+    for (const [k, v] of Object.entries(opts.headers ?? {}))
+      if (/^[0-9a-f-]{36}$/i.test(v))
+        headers[k] = v;
     if (opts.body !== undefined)
       headers["content-type"] = "application/json";
     if (opts.idempotencyKey)
@@ -35578,14 +35583,15 @@ var domainTools = [
 ];
 
 // src/tools/email.ts
+var projectId = exports_external.string().uuid().optional().describe("Project whose email to use. Only needed with a whole-account key that reaches several projects with email.");
 var emailTools = [
   defineTool({
     name: "email_status",
     title: "Email status",
     kind: "read",
     description: "Email service of the key's project: plan, usage today and this month, limits, counts.",
-    input: {},
-    run: (_a3, api2) => api2.email("GET", "/status")
+    input: { projectId },
+    run: (a, api2) => api2.email("GET", "/status", { project: a.projectId })
   }),
   defineTool({
     name: "send_email",
@@ -35593,6 +35599,7 @@ var emailTools = [
     kind: "write",
     description: "Send one email from a verified domain of the project (counts against the plan's quota). Use templateId + templateData, or subject + html/text. Pass an idempotencyKey when retrying.",
     input: {
+      projectId,
       from: exports_external.string().describe('"hello@example.com" or "Acme <hello@example.com>"'),
       to: exports_external.array(exports_external.string()).min(1).max(50),
       cc: exports_external.array(exports_external.string()).max(50).optional(),
@@ -35606,63 +35613,63 @@ var emailTools = [
       variables: exports_external.record(exports_external.string(), exports_external.string()).optional(),
       idempotencyKey: exports_external.string().max(128).optional()
     },
-    run: (a, api2) => api2.email("POST", "/send", { body: a })
+    run: ({ projectId: project, ...a }, api2) => api2.email("POST", "/send", { body: a, project })
   }),
   defineTool({
     name: "list_emails",
     title: "List sent emails",
     kind: "read",
     description: "Email log, newest first, with delivery status.",
-    input: { status: exports_external.string().optional(), search: exports_external.string().optional(), limit: exports_external.number().int().min(1).max(100).optional(), cursor: exports_external.string().optional() },
-    run: (a, api2) => api2.email("GET", "/emails", { query: a })
+    input: { projectId, status: exports_external.string().optional(), search: exports_external.string().optional(), limit: exports_external.number().int().min(1).max(100).optional(), cursor: exports_external.string().optional() },
+    run: ({ projectId: project, ...a }, api2) => api2.email("GET", "/emails", { query: a, project })
   }),
   defineTool({
     name: "get_email",
     title: "Get email",
     kind: "read",
     description: "One sent email with its status and events.",
-    input: { emailId: exports_external.string() },
-    run: (a, api2) => api2.email("GET", `/emails/${a.emailId}`)
+    input: { projectId, emailId: exports_external.string() },
+    run: (a, api2) => api2.email("GET", `/emails/${a.emailId}`, { project: a.projectId })
   }),
   defineTool({
     name: "list_email_domains",
     title: "List sending domains",
     kind: "read",
     description: "Sending domains with verification status and the DNS records to add.",
-    input: {},
-    run: (_a3, api2) => api2.email("GET", "/domains")
+    input: { projectId },
+    run: (a, api2) => api2.email("GET", "/domains", { project: a.projectId })
   }),
   defineTool({
     name: "add_email_domain",
     title: "Add sending domain",
     kind: "write",
     description: "Add a sending domain; the response lists the DNS records the user must create, then call verify_email_domain.",
-    input: { domain: exports_external.string() },
-    run: (a, api2) => api2.email("POST", "/domains", { body: { domain: a.domain } })
+    input: { projectId, domain: exports_external.string() },
+    run: (a, api2) => api2.email("POST", "/domains", { body: { domain: a.domain }, project: a.projectId })
   }),
   defineTool({
     name: "verify_email_domain",
     title: "Verify sending domain",
     kind: "write",
     description: "Check a sending domain's DNS records again.",
-    input: { domainId: exports_external.string() },
-    run: (a, api2) => api2.email("POST", `/domains/${a.domainId}/verify`)
+    input: { projectId, domainId: exports_external.string() },
+    run: (a, api2) => api2.email("POST", `/domains/${a.domainId}/verify`, { project: a.projectId })
   }),
   defineTool({
     name: "list_email_templates",
     title: "List email templates",
     kind: "read",
     description: "Email templates of the project.",
-    input: {},
-    run: (_a3, api2) => api2.email("GET", "/templates")
+    input: { projectId },
+    run: (a, api2) => api2.email("GET", "/templates", { project: a.projectId })
   }),
   defineTool({
     name: "add_contact",
     title: "Add contact",
     kind: "write",
     description: "Add or update an audience contact.",
-    input: { email: exports_external.string(), firstName: exports_external.string().optional(), lastName: exports_external.string().optional() },
-    run: (a, api2) => api2.email("POST", "/contacts", { body: a })
+    input: { projectId, email: exports_external.string(), firstName: exports_external.string().optional(), lastName: exports_external.string().optional() },
+    run: ({ projectId: project, ...a }, api2) => api2.email("POST", "/contacts", { body: a, project })
   })
 ];
 
@@ -35865,7 +35872,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.3.1";
+var VERSION = "0.4.0";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids.
 - Anything that costs money (create/deploy/scale services, upgrade a database plan, create/renew/upgrade VPS, register/renew/transfer domains): run the dryRun or price lookup first, tell the user the cost in IDR and wait for an explicit yes.
@@ -35895,6 +35902,6 @@ var server = createHelipodServer({
   emailApiUrl: process.env.HELIPOD_EMAIL_API_URL
 });
 if (!process.env.HELIPOD_API_KEY && !process.env.HELIPOD_EMAIL_API_KEY) {
-  console.error("helipod-mcp: set HELIPOD_API_KEY (and optionally HELIPOD_EMAIL_API_KEY). Create keys in the Helipod dashboard.");
+  console.error("helipod-mcp: set HELIPOD_API_KEY (enable the Email API on it for the email tools). Create keys in the Helipod dashboard: Project → Settings → API keys.");
 }
 await server.connect(new StdioServerTransport);

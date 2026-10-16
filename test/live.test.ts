@@ -46,11 +46,17 @@ describe("errors an agent can act on", () => {
         expect(r.isError).toBe(true);
         expect(json(r).status).toBe(401);
     });
-    test("email tool without an email key → NO_EMAIL_API_KEY", async () => {
-        const c = await connect({ apiKey: "hel_x" });
+    test("email tool with no key at all → NO_API_KEY", async () => {
+        const c = await connect({});
         const r: any = await c.callTool({ name: "email_status", arguments: {} });
         expect(r.isError).toBe(true);
-        expect(json(r).code).toBe("NO_EMAIL_API_KEY");
+        expect(json(r).code).toBe("NO_API_KEY");
+    });
+    test("email tool falls back to the Helipod key (here an invalid one → 401 from the Email API)", async () => {
+        const c = await connect({ apiKey: "hel_" + "0".repeat(48) });
+        const r: any = await c.callTool({ name: "email_status", arguments: {} });
+        expect(r.isError).toBe(true);
+        expect(json(r).status).toBe(401);
     });
     test("helipod_request refuses paths outside the APIs", async () => {
         const c = await connect({ apiKey: "hel_x" });

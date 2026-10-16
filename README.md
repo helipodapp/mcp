@@ -27,11 +27,11 @@ Prefer a key, a local server, or a tool not listed? Read on.
 
 In the [dashboard](https://helipod.io/project) open a project, then **Settings → API keys**. Choose the products (Container API, Database API, VPS API, Domain API) and the reach (one project, or the whole account; the Domain API needs a whole-account key). The key starts with `hel_`.
 
-Optional: an **email API key** from the project's **Email** section, for the email tools.
+For the email tools, enable **Email API** on the key (or sign in with it ticked). An email key from the project's **Email** section also still works, as `HELIPOD_EMAIL_API_KEY`.
 
 ```sh
 export HELIPOD_API_KEY=hel_...
-export HELIPOD_EMAIL_API_KEY=...   # optional
+export HELIPOD_EMAIL_API_KEY=...   # optional: only if you use a separate email key
 ```
 
 Start with a key limited to one project while you try things out.
@@ -150,11 +150,11 @@ Gemini CLI only starts MCP servers in folders you have trusted.
 
 ### Other clients
 
-Run `npx -y helipod-mcp` as a stdio MCP server with `HELIPOD_API_KEY` (and optionally `HELIPOD_EMAIL_API_KEY`) in its environment.
+Run `npx -y helipod-mcp` as a stdio MCP server with `HELIPOD_API_KEY` in its environment (enable the Email API on it for the email tools, or add `HELIPOD_EMAIL_API_KEY`).
 
 ## Hosted server (nothing to install)
 
-Clients that connect by URL can use `https://api.helipod.io/mcp` (Streamable HTTP) with `Authorization: Bearer hel_...` (and `X-Helipod-Email-Key` for the email tools). Same tools; the key is used per request and never stored.
+Clients that connect by URL can use `https://api.helipod.io/mcp` (Streamable HTTP) with `Authorization: Bearer hel_...` (the same key or sign-in serves the email tools when it has the Email API enabled; `X-Helipod-Email-Key` still works). Same tools; the key is used per request and never stored.
 
 ```sh
 claude mcp add --transport http helipod https://api.helipod.io/mcp --header "Authorization: Bearer $HELIPOD_API_KEY"
@@ -211,7 +211,7 @@ Each tool is marked read-only, write or destructive, so clients can ask before r
 | Variable | Default |
 |---|---|
 | `HELIPOD_API_KEY` | (required for containers, VPS, domains) |
-| `HELIPOD_EMAIL_API_KEY` | (required for email tools) |
+| `HELIPOD_EMAIL_API_KEY` | (optional; the email tools use `HELIPOD_API_KEY` when it has the Email API enabled) |
 | `HELIPOD_API_URL` | `https://api.helipod.io/api` |
 | `HELIPOD_EMAIL_API_URL` | `https://mail.helipod.io/api/email` |
 

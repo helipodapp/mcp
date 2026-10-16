@@ -5,7 +5,7 @@ description: Send transactional email from an application through Helipod Email 
 
 # Helipod Email
 
-Uses a separate **email API key** (dashboard → Email → API keys) as `HELIPOD_EMAIL_API_KEY`. Base URL: `https://mail.helipod.io/api/email`.
+Uses the Helipod API key `HELIPOD_API_KEY` with **Email API** enabled (Settings → API keys; a whole-account key adds `X-Helipod-Project: <projectId>`), or a separate email key from the Email section as `HELIPOD_EMAIL_API_KEY`. Base URL: `https://mail.helipod.io/api/email`.
 
 ## Set up
 
@@ -20,7 +20,7 @@ Never put the key in client-side code. Store it as a secret (on Helipod: `set_va
 ```js
 await fetch("https://mail.helipod.io/api/email/send", {
   method: "POST",
-  headers: { Authorization: `Bearer ${process.env.HELIPOD_EMAIL_API_KEY}`, "Content-Type": "application/json" },
+  headers: { Authorization: `Bearer ${process.env.HELIPOD_EMAIL_API_KEY ?? process.env.HELIPOD_API_KEY}`, "Content-Type": "application/json" },
   body: JSON.stringify({
     from: "Acme <hello@mail.example.com>",
     to: ["user@example.com"],

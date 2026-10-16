@@ -12,7 +12,7 @@ Helipod is a cloud platform in Indonesia: containers (deploy apps from Git, imag
 - **MCP tools** (preferred): if tools like `list_projects`, `create_service`, `list_vps_plans` are available, use them.
 - **Without MCP**: call the HTTP API with `Authorization: Bearer $HELIPOD_API_KEY`.
   - Container, Database, VPS, Domain APIs: `https://api.helipod.io/api` (`/containers/...`, `/databases/...`, `/vps/...`, `/domains/...`)
-  - Email API: `https://mail.helipod.io/api/email` with `$HELIPOD_EMAIL_API_KEY` (a separate email key)
+  - Email API: `https://mail.helipod.io/api/email` with `$HELIPOD_API_KEY` when the key has the Email API enabled (a whole-account key adds `X-Helipod-Project: <projectId>`), or a separate email key `$HELIPOD_EMAIL_API_KEY`
   - AI gateway: `https://ai.helipod.io/v1` with a `hel_ai_...` key (OpenAI and Anthropic compatible)
 - Keys are created in the dashboard: Project → Settings → API keys. A key is limited to the products and project chosen there; `403 SCOPE_NOT_ALLOWED` means the key lacks that product, `404` on an id means it is outside the key's reach.
 - Every response is `{ "success": true, "data": ... }` or `{ "success": false, "error": "...", "code": "..." }`.
