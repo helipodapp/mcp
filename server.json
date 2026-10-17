@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.helipod/helipod",
+  "title": "Helipod",
+  "description": "Run your Helipod cloud: deploy apps, read logs, manage VPS, Postgres, domains, email and AI Gateway.",
+  "websiteUrl": "https://docs.helipod.io/docs/helipod/ai-agents",
+  "repository": {
+    "url": "https://github.com/helipodapp/mcp",
+    "source": "github"
+  },
+  "version": "0.5.3",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.helipod.io/mcp"
+    }
+  ]
+}
