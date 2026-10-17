@@ -40,13 +40,13 @@ export const vpsTools = [
     }),
     defineTool({
         name: "vps_power", title: "Start / stop / restart VPS", kind: "destructive",
-        description: "Power action on a server. stop and restart interrupt whatever runs on it: confirm with the user.",
+        description: "Power action on a server. stop and restart interrupt whatever runs on it.",
         input: { vpsId, action: z.enum(["start", "stop", "restart"]) },
         run: (a, api) => api.api("POST", `/vps/${a.vpsId}/${a.action}`),
     }),
     defineTool({
         name: "reinstall_vps", title: "Reinstall VPS", kind: "destructive",
-        description: "Wipe the disk and install an operating system. ALL DATA ON THE SERVER IS LOST. Get explicit confirmation.",
+        description: "Wipe the disk and install an operating system. ALL DATA ON THE SERVER IS LOST.",
         input: { vpsId, osType: z.string(), osVersion: z.string(), rootPassword: password },
         run: (a, api) => api.api("POST", `/vps/${a.vpsId}/reinstall`, { body: { osType: a.osType, osVersion: a.osVersion, rootPassword: a.rootPassword } }),
     }),
@@ -58,13 +58,13 @@ export const vpsTools = [
     }),
     defineTool({
         name: "get_vps_credentials", title: "Get VPS login", kind: "read",
-        description: "Login details: host, user (root, or Administrator on Windows), port, protocol (ssh or rdp) and password. Treat the password as a secret: don't echo it unless the user asks.",
+        description: "Login details: host, user (root, or Administrator on Windows), port, protocol (ssh or rdp) and password. The response contains the root password.",
         input: { vpsId },
         run: (a, api) => api.api("GET", `/vps/${a.vpsId}/credentials`),
     }),
     defineTool({
         name: "terminate_vps", title: "Terminate VPS", kind: "destructive",
-        description: "Delete a server permanently. ALL DATA IS LOST and there is no refund for the remaining period. Get explicit confirmation.",
+        description: "Delete a server permanently. ALL DATA IS LOST and there is no refund for the remaining period.",
         input: { vpsId },
         run: (a, api) => api.api("DELETE", `/vps/${a.vpsId}`),
     }),
@@ -82,13 +82,13 @@ export const vpsTools = [
     }),
     defineTool({
         name: "upgrade_vps", title: "Upgrade VPS plan", kind: "write",
-        description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. Call get_vps_upgrade_options first: use only a planId it lists, tell the user its price in IDR and that the server restarts, and wait for an explicit yes.",
+        description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. planId must be one listed by get_vps_upgrade_options, which also gives the price in IDR; the server restarts during the upgrade.",
         input: { vpsId, planId: z.string() },
         run: (a, api) => api.api("POST", `/vps/${a.vpsId}/upgrade`, { body: { planId: a.planId } }),
     }),
     defineTool({
         name: "get_vps_upgrade_options", title: "VPS upgrade options", kind: "read",
-        description: "Plans this server can move to (same family and region) with the price to pay now for the days left (IDR). Call it before upgrade_vps.",
+        description: "Plans this server can move to (same family and region) with the price to pay now for the days left (IDR). upgrade_vps accepts only a planId from this list.",
         input: { vpsId },
         run: (a, api) => api.api("GET", `/vps/${a.vpsId}/upgrade-options`),
     }),
@@ -155,7 +155,7 @@ export const vpsTools = [
     }),
     defineTool({
         name: "remove_vps_port", title: "Remove port forward", kind: "destructive",
-        description: "Remove a port forward (id from list_vps_ports). Whatever reaches the server through it stops working: confirm with the user.",
+        description: "Remove a port forward (id from list_vps_ports). Whatever reaches the server through it stops working.",
         input: { vpsId, allocationId: z.string().uuid().describe("Port forward id from list_vps_ports") },
         run: (a, api) => api.api("DELETE", `/vps/${a.vpsId}/ports/${a.allocationId}`),
     }),
@@ -173,14 +173,14 @@ export const vpsTools = [
     }),
     defineTool({
         name: "remove_vps_ssh_key", title: "Remove SSH key", kind: "destructive",
-        description: "Remove an SSH key by fingerprint (from list_vps_ssh_keys). Whoever logs in with it loses access; make sure the user keeps another way in (another key or the root password).",
+        description: "Remove an SSH key by fingerprint (from list_vps_ssh_keys). Whoever logs in with it loses access (another key or the root password still works).",
         input: { vpsId, fingerprint: z.string().min(8).max(100).describe("e.g. SHA256:abc…+/= as listed") },
         // The fingerprint is base64 ('/' and '+'): sent in base64url form, which the API accepts, so the path stays one segment.
         run: (a, api) => api.api("DELETE", `/vps/${a.vpsId}/ssh-keys/${a.fingerprint.trim().replace(/^SHA256:/, "").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`),
     }),
     defineTool({
         name: "set_vps_ssh", title: "Turn SSH on / off", kind: "write", idempotent: true,
-        description: "Turn SSH access to the server on or off (no change when it is already in that state). Turning it off locks out every SSH session and key: confirm with the user first. The server must be running.",
+        description: "Turn SSH access to the server on or off (no change when it is already in that state). Turning it off locks out every SSH session and key. The server must be running.",
         input: { vpsId, enabled: z.boolean() },
         run: (a, api) => api.api("POST", `/vps/${a.vpsId}/ssh`, { body: { enabled: a.enabled } }),
     }),
@@ -198,7 +198,7 @@ export const vpsTools = [
     }),
     defineTool({
         name: "apply_snapshot", title: "Roll back to snapshot", kind: "destructive",
-        description: "Roll the server's disk back to a snapshot. Everything written since is lost. Get explicit confirmation.",
+        description: "Roll the server's disk back to a snapshot. Everything written since is lost.",
         input: { vpsId, snapshotId: z.string() },
         run: (a, api) => api.api("POST", `/vps/${a.vpsId}/snapshots/${a.snapshotId}/apply`),
     }),
@@ -222,7 +222,7 @@ export const vpsTools = [
     }),
     defineTool({
         name: "activate_vps_backup", title: "Turn on VPS backups", kind: "write",
-        description: "Turn on daily backups for a running Linux server. COSTS MONEY right away: the whole period (1 or 12 months) is charged from the wallet and there is no dry run. Get priceMonthly / priceYearly from list_backup_plans, tell the user the price in IDR and wait for an explicit yes. The server must be running.",
+        description: "Turn on daily backups for a running Linux server. COSTS MONEY right away: the whole period (1 or 12 months) is charged from the wallet and there is no dry run. Prices (priceMonthly / priceYearly, IDR) are in list_backup_plans. The server must be running.",
         input: {
             vpsId, planCode: z.string().max(30).describe("Plan code from list_backup_plans"),
             months: z.union([z.literal(1), z.literal(12)]).describe("1 = monthly, 12 = yearly"),
@@ -243,7 +243,7 @@ export const vpsTools = [
     }),
     defineTool({
         name: "cancel_vps_backup", title: "Cancel VPS backups", kind: "destructive",
-        description: "Stop renewing the server's backups. Backups keep running until the paid period ends; after that and a grace period the backups are DELETED and can no longer be restored. Confirm with the user. (update_vps_backup autoRenew=true undoes it before the end.)",
+        description: "Stop renewing the server's backups. Backups keep running until the paid period ends; after that and a grace period the backups are DELETED and can no longer be restored. (update_vps_backup autoRenew=true undoes it before the end.)",
         input: { vpsId },
         run: (a, api) => api.api("DELETE", `/vps/${a.vpsId}/backup`),
     }),
@@ -273,7 +273,7 @@ export const vpsTools = [
     }),
     defineTool({
         name: "restore_vps_backup", title: "Restore VPS from backup", kind: "destructive",
-        description: "Restore from a restore point. mode=full puts the WHOLE disk back to that moment: everything written since is LOST and the server is offline while it restores. mode=files restores 1-50 paths: target=folder (default) puts them in a separate folder on the server, target=inplace OVERWRITES the current files. Name what will be overwritten and get explicit confirmation. Runs in the background: follow it with list_vps_backup_runs.",
+        description: "Restore from a restore point. mode=full puts the WHOLE disk back to that moment: everything written since is LOST and the server is offline while it restores. mode=files restores 1-50 paths: target=folder (default) puts them in a separate folder on the server, target=inplace OVERWRITES the current files. Files at those paths are overwritten. Runs in the background: follow it with list_vps_backup_runs.",
         input: {
             vpsId, pointId, mode: z.enum(["files", "full"]),
             paths: z.array(backupPath).min(1).max(50).optional().describe("mode=files: files or folders to restore"),
@@ -289,7 +289,7 @@ export const vpsTools = [
     }),
     defineTool({
         name: "get_vps_backup_download", title: "Get backup download link", kind: "read",
-        description: "Status of a prepared backup download; when ready, a short-lived url for the user to open (it expires at expiresAt). Give the user the link; do not download it yourself.",
+        description: "Status of a prepared backup download; when ready, a short-lived url for the user to open (it expires at expiresAt). The link is for the user to download in a browser.",
         input: { vpsId, downloadId: z.string() },
         run: (a, api) => api.api("GET", `/vps/${a.vpsId}/backup/downloads/${a.downloadId}`),
     }),

@@ -5,7 +5,7 @@ import { defineTool } from "../tool.js";
 const domainId = z.number().int().positive().describe("Domain id (number, from list_my_domains)");
 const hostId = z.number().int().positive().describe("Child nameserver id (from list_child_nameservers)");
 const dryRun = z.boolean().optional().describe("true = return the exact price (IDR, VAT included) and the wallet balance after it; nothing is charged or registered");
-const DRY = "Call with dryRun=true first, tell the user the price and walletBalanceAfter, and wait for an explicit yes before the real call.";
+const DRY = "dryRun=true returns the price and walletBalanceAfter without charging or changing anything.";
 const record = z.object({
     name: z.string().describe('"@" for the domain itself, or a label like "www"'),
     type: z.enum(["A", "AAAA", "MX", "MXE", "CNAME", "SPF", "TXT"]),
@@ -46,7 +46,7 @@ export const domainTools = [
     }),
     defineTool({
         name: "update_registrant", title: "Update owner details", kind: "write", idempotent: true,
-        description: "Set the account's domain owner (registrant) details the registrar needs: name, phone, addressLine1, city, state, countryCode and postalCode are required for a complete profile (organization, addressLine2 and fax are optional). Send only fields to change. This is personal data: use only what the user gave you, never invent or guess it, and don't repeat it back needlessly. The answer says whether the details are now complete and which fields are still missing (it never echoes them).",
+        description: "Set the account's domain owner (registrant) details the registrar needs: name, phone, addressLine1, city, state, countryCode and postalCode are required for a complete profile (organization, addressLine2 and fax are optional). Send only fields to change. These are personal details of the domain owner, stored as given. The answer says whether the details are now complete and which fields are still missing (it never echoes them).",
         input: {
             name: z.string().min(1).max(255).optional().describe("Owner's full name"),
             organization: z.string().max(255).optional().describe("Company / organization (optional)"),
@@ -95,7 +95,7 @@ export const domainTools = [
     }),
     defineTool({
         name: "set_dns_records", title: "Replace DNS records", kind: "destructive",
-        description: "Replace ALL DNS records of the domain with this list. Read list_dns_records first and include every record to keep.",
+        description: "Replace ALL DNS records of the domain with this list. Records not included are deleted (list_dns_records returns the current ones).",
         input: { domainId, records: z.array(record).min(1) },
         run: (a, api) => api.api("POST", `/domains/${a.domainId}/dns`, { body: { records: a.records } }),
     }),
@@ -113,7 +113,7 @@ export const domainTools = [
     }),
     defineTool({
         name: "enable_whois_privacy", title: "Enable WHOIS privacy", kind: "write",
-        description: "Hide the owner's details in WHOIS. COSTS MONEY (the whois_protection price per year). Confirm with the user.",
+        description: "Hide the owner's details in WHOIS. COSTS MONEY (the whois_protection price per year).",
         input: { domainId },
         run: (a, api) => api.api("POST", `/domains/${a.domainId}/whois-protection`),
     }),
@@ -125,13 +125,13 @@ export const domainTools = [
     }),
     defineTool({
         name: "whois_lookup", title: "WHOIS lookup", kind: "read",
-        description: "Public WHOIS record of any domain name: registrar, dates, status, nameservers. Use search_domain to check availability instead.",
+        description: "Public WHOIS record of any domain name: registrar, dates, status, nameservers. Availability is checked by search_domain.",
         input: { domain: z.string().describe("e.g. example.com") },
         run: (a, api) => api.api("GET", "/domains/whois", { query: { domain: a.domain } }),
     }),
     defineTool({
         name: "update_dns_record", title: "Update one DNS record", kind: "write", idempotent: true,
-        description: "Set one DNS record (by name and type) to new content, leaving the other records as they are. Safer than set_dns_records for a single change; read list_dns_records first.",
+        description: "Set one DNS record (by name and type) to new content, leaving the other records as they are. Changes one record and leaves the others as they are (list_dns_records returns record ids).",
         input: { domainId, ...record.shape },
         run: (a, api) => api.api("PUT", `/domains/${a.domainId}/dns`, { body: { name: a.name, type: a.type, content: a.content, ttl: a.ttl } }),
     }),
@@ -167,7 +167,7 @@ export const domainTools = [
     }),
     defineTool({
         name: "disable_whois_privacy", title: "Disable WHOIS privacy", kind: "destructive",
-        description: "Turn WHOIS privacy off: the owner's name, address, email and phone become PUBLIC in WHOIS (no refund; turning it back on with enable_whois_privacy costs money). Get explicit confirmation.",
+        description: "Turn WHOIS privacy off: the owner's name, address, email and phone become PUBLIC in WHOIS (no refund; turning it back on with enable_whois_privacy costs money).",
         input: { domainId },
         run: (a, api) => api.api("DELETE", `/domains/${a.domainId}/whois-protection`),
     }),

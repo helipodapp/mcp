@@ -137,7 +137,7 @@ export const containerTools = [
     }),
     defineTool({
         name: "update_service", title: "Update / rename service", kind: "write", idempotent: true,
-        description: "Rename a service or change its start command, root directory, health check or startup dependencies. Settings apply on the next deploy (needsRedeploy). Renaming breaks references like ${{oldName.KEY}} in other services' variables: show the user the returned warnings and fix those variables (set_variables / set_project_variables) before redeploying.",
+        description: "Rename a service or change its start command, root directory, health check or startup dependencies. Settings apply on the next deploy (needsRedeploy). Renaming breaks references like ${{oldName.KEY}} in other services' variables: the response lists them in warnings.",
         input: {
             serviceId: id("Service"),
             name: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,39}$/).optional().describe("New service name (letters, digits, _ -; starts with a letter; unique in the environment)"),
@@ -156,13 +156,13 @@ export const containerTools = [
     }),
     defineTool({
         name: "delete_service", title: "Delete service", kind: "destructive",
-        description: "Stop and delete a service with its domains and volumes. Volume data is lost. Confirm with the user first.",
+        description: "Stop and delete a service with its domains and volumes. Volume data is lost.",
         input: { serviceId: id("Service") },
         run: (a, api) => api.api("DELETE", `${C}/services/${a.serviceId}`),
     }),
     defineTool({
         name: "deploy_service", title: "Deploy service", kind: "write",
-        description: "Start a new deployment (Git services build the latest commit). COSTS MONEY: charges today's cost when the build starts, refunded if it fails. dryRun=true returns the cost only. Then poll get_deployment.",
+        description: "Start a new deployment (Git services build the latest commit). COSTS MONEY: charges today's cost when the build starts, refunded if it fails. dryRun=true returns the cost only. The deployment runs in the background; get_deployment returns its status.",
         input: { serviceId: id("Service"), dryRun, idempotencyKey: idem },
         run: (a, api) => api.api("POST", `${C}/services/${a.serviceId}/deployments`, { query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: a.idempotencyKey }),
     }),
@@ -220,7 +220,7 @@ export const containerTools = [
     }),
     defineTool({
         name: "add_service_domain", title: "Add domain to service", kind: "write",
-        description: "Add a free *.helipod.app domain (kind=helipod) or your own domain (kind=custom) to a port. For custom domains, tell the user to create the DNS record from the response's dns field.",
+        description: "Add a free *.helipod.app domain (kind=helipod) or your own domain (kind=custom) to a port. For custom domains, the response's dns field is the DNS record the domain needs.",
         input: {
             serviceId: id("Service"),
             kind: z.enum(["helipod", "custom"]),
@@ -275,13 +275,13 @@ export const containerTools = [
     }),
     defineTool({
         name: "delete_volume", title: "Delete volume", kind: "destructive",
-        description: "Remove a volume; its data is lost on the next deploy. Confirm with the user first.",
+        description: "Remove a volume; its data is lost on the next deploy.",
         input: { serviceId: id("Service"), volumeId: id("Volume") },
         run: (a, api) => api.api("DELETE", `${C}/services/${a.serviceId}/volumes/${a.volumeId}`),
     }),
     defineTool({
         name: "resize_volume", title: "Resize volume", kind: "write",
-        description: "Change a volume's size (1-50 GB; never below the space already used). A larger volume COSTS MONEY: it raises the daily cost, charged pro rata when the service is redeployed and in full from the next renewal. Call with dryRun=true first, show currentDailyCost vs newDailyCost (IDR) and wait for the user's yes. Applies on the next deploy.",
+        description: "Change a volume's size (1-50 GB; never below the space already used). A larger volume COSTS MONEY: it raises the daily cost, charged pro rata when the service is redeployed and in full from the next renewal. dryRun=true returns currentDailyCost and newDailyCost (IDR) without changing anything. Applies on the next deploy.",
         input: {
             serviceId: id("Service"), volumeId: id("Volume"),
             sizeGb: z.number().int().min(1).max(50).optional().describe("New size in GB (give sizeGb or sizeMb)"),
@@ -309,7 +309,7 @@ export const containerTools = [
     }),
     defineTool({
         name: "set_function_code", title: "Save function source", kind: "write", idempotent: true,
-        description: "Replace the whole source code of a function service (up to 512 KB). The previous code is overwritten: read get_function_code first when editing. Runs after the next deploy (deploy_service).",
+        description: "Replace the whole source code of a function service (up to 512 KB). The previous code is overwritten (get_function_code returns the current code). Runs after the next deploy (deploy_service).",
         input: { serviceId: id("Service"), code: z.string().min(1).max(512 * 1024) },
         run: (a, api) => api.api("PUT", `${C}/services/${a.serviceId}/function`, { body: { code: a.code } }),
     }),
@@ -321,7 +321,7 @@ export const containerTools = [
     }),
     defineTool({
         name: "add_secret_file", title: "Add secret file", kind: "write",
-        description: "Upload a file (certificate, key, credentials JSON, config) that is mounted read-only into the service at mountPath. Content is base64 of the file's bytes, at most 10 MB; it is stored as a secret and can never be read back. Applies on the next deploy. Don't echo the contents in chat.",
+        description: "Upload a file (certificate, key, credentials JSON, config) that is mounted read-only into the service at mountPath. Content is base64 of the file's bytes, at most 10 MB; it is stored as a secret and can never be read back. Applies on the next deploy.",
         input: {
             serviceId: id("Service"),
             fileName: z.string().min(1).max(200).describe("e.g. service-account.json"),
@@ -345,7 +345,7 @@ export const containerTools = [
     }),
     defineTool({
         name: "delete_secret_file", title: "Delete secret file", kind: "destructive",
-        description: "Delete a secret file; it is gone from the service after the next deploy and cannot be recovered (contents are never readable). Confirm with the user.",
+        description: "Delete a secret file; it is gone from the service after the next deploy and cannot be recovered (contents are never readable).",
         input: { serviceId: id("Service"), fileId: id("File") },
         run: (a, api) => api.api("DELETE", `${C}/services/${a.serviceId}/files/${a.fileId}`),
     }),
@@ -374,7 +374,7 @@ export const containerTools = [
     }),
     defineTool({
         name: "deploy_template", title: "Deploy template", kind: "write",
-        description: "Create every service of a template in an environment and deploy them. COSTS MONEY (each service is billed daily). Confirm with the user first.",
+        description: "Create every service of a template in an environment and deploy them. COSTS MONEY (each service is billed daily).",
         input: {
             environmentId: id("Environment"),
             slug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/),

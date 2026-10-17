@@ -35125,7 +35125,7 @@ var containerTools = [
     title: "Update / rename service",
     kind: "write",
     idempotent: true,
-    description: "Rename a service or change its start command, root directory, health check or startup dependencies. Settings apply on the next deploy (needsRedeploy). Renaming breaks references like ${{oldName.KEY}} in other services' variables: show the user the returned warnings and fix those variables (set_variables / set_project_variables) before redeploying.",
+    description: "Rename a service or change its start command, root directory, health check or startup dependencies. Settings apply on the next deploy (needsRedeploy). Renaming breaks references like ${{oldName.KEY}} in other services' variables: the response lists them in warnings.",
     input: {
       serviceId: id("Service"),
       name: exports_external.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,39}$/).optional().describe("New service name (letters, digits, _ -; starts with a letter; unique in the environment)"),
@@ -35149,7 +35149,7 @@ var containerTools = [
     name: "delete_service",
     title: "Delete service",
     kind: "destructive",
-    description: "Stop and delete a service with its domains and volumes. Volume data is lost. Confirm with the user first.",
+    description: "Stop and delete a service with its domains and volumes. Volume data is lost.",
     input: { serviceId: id("Service") },
     run: (a, api2) => api2.api("DELETE", `${C}/services/${a.serviceId}`)
   }),
@@ -35157,7 +35157,7 @@ var containerTools = [
     name: "deploy_service",
     title: "Deploy service",
     kind: "write",
-    description: "Start a new deployment (Git services build the latest commit). COSTS MONEY: charges today's cost when the build starts, refunded if it fails. dryRun=true returns the cost only. Then poll get_deployment.",
+    description: "Start a new deployment (Git services build the latest commit). COSTS MONEY: charges today's cost when the build starts, refunded if it fails. dryRun=true returns the cost only. The deployment runs in the background; get_deployment returns its status.",
     input: { serviceId: id("Service"), dryRun, idempotencyKey: idem },
     run: (a, api2) => api2.api("POST", `${C}/services/${a.serviceId}/deployments`, { query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: a.idempotencyKey })
   }),
@@ -35234,7 +35234,7 @@ var containerTools = [
     name: "add_service_domain",
     title: "Add domain to service",
     kind: "write",
-    description: "Add a free *.helipod.app domain (kind=helipod) or your own domain (kind=custom) to a port. For custom domains, tell the user to create the DNS record from the response's dns field.",
+    description: "Add a free *.helipod.app domain (kind=helipod) or your own domain (kind=custom) to a port. For custom domains, the response's dns field is the DNS record the domain needs.",
     input: {
       serviceId: id("Service"),
       kind: exports_external.enum(["helipod", "custom"]),
@@ -35305,7 +35305,7 @@ var containerTools = [
     name: "delete_volume",
     title: "Delete volume",
     kind: "destructive",
-    description: "Remove a volume; its data is lost on the next deploy. Confirm with the user first.",
+    description: "Remove a volume; its data is lost on the next deploy.",
     input: { serviceId: id("Service"), volumeId: id("Volume") },
     run: (a, api2) => api2.api("DELETE", `${C}/services/${a.serviceId}/volumes/${a.volumeId}`)
   }),
@@ -35313,7 +35313,7 @@ var containerTools = [
     name: "resize_volume",
     title: "Resize volume",
     kind: "write",
-    description: "Change a volume's size (1-50 GB; never below the space already used). A larger volume COSTS MONEY: it raises the daily cost, charged pro rata when the service is redeployed and in full from the next renewal. Call with dryRun=true first, show currentDailyCost vs newDailyCost (IDR) and wait for the user's yes. Applies on the next deploy.",
+    description: "Change a volume's size (1-50 GB; never below the space already used). A larger volume COSTS MONEY: it raises the daily cost, charged pro rata when the service is redeployed and in full from the next renewal. dryRun=true returns currentDailyCost and newDailyCost (IDR) without changing anything. Applies on the next deploy.",
     input: {
       serviceId: id("Service"),
       volumeId: id("Volume"),
@@ -35352,7 +35352,7 @@ var containerTools = [
     title: "Save function source",
     kind: "write",
     idempotent: true,
-    description: "Replace the whole source code of a function service (up to 512 KB). The previous code is overwritten: read get_function_code first when editing. Runs after the next deploy (deploy_service).",
+    description: "Replace the whole source code of a function service (up to 512 KB). The previous code is overwritten (get_function_code returns the current code). Runs after the next deploy (deploy_service).",
     input: { serviceId: id("Service"), code: exports_external.string().min(1).max(512 * 1024) },
     run: (a, api2) => api2.api("PUT", `${C}/services/${a.serviceId}/function`, { body: { code: a.code } })
   }),
@@ -35368,7 +35368,7 @@ var containerTools = [
     name: "add_secret_file",
     title: "Add secret file",
     kind: "write",
-    description: "Upload a file (certificate, key, credentials JSON, config) that is mounted read-only into the service at mountPath. Content is base64 of the file's bytes, at most 10 MB; it is stored as a secret and can never be read back. Applies on the next deploy. Don't echo the contents in chat.",
+    description: "Upload a file (certificate, key, credentials JSON, config) that is mounted read-only into the service at mountPath. Content is base64 of the file's bytes, at most 10 MB; it is stored as a secret and can never be read back. Applies on the next deploy.",
     input: {
       serviceId: id("Service"),
       fileName: exports_external.string().min(1).max(200).describe("e.g. service-account.json"),
@@ -35398,7 +35398,7 @@ var containerTools = [
     name: "delete_secret_file",
     title: "Delete secret file",
     kind: "destructive",
-    description: "Delete a secret file; it is gone from the service after the next deploy and cannot be recovered (contents are never readable). Confirm with the user.",
+    description: "Delete a secret file; it is gone from the service after the next deploy and cannot be recovered (contents are never readable).",
     input: { serviceId: id("Service"), fileId: id("File") },
     run: (a, api2) => api2.api("DELETE", `${C}/services/${a.serviceId}/files/${a.fileId}`)
   }),
@@ -35435,7 +35435,7 @@ var containerTools = [
     name: "deploy_template",
     title: "Deploy template",
     kind: "write",
-    description: "Create every service of a template in an environment and deploy them. COSTS MONEY (each service is billed daily). Confirm with the user first.",
+    description: "Create every service of a template in an environment and deploy them. COSTS MONEY (each service is billed daily).",
     input: {
       environmentId: id("Environment"),
       slug: exports_external.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/),
@@ -35516,7 +35516,7 @@ var vpsTools = [
     name: "vps_power",
     title: "Start / stop / restart VPS",
     kind: "destructive",
-    description: "Power action on a server. stop and restart interrupt whatever runs on it: confirm with the user.",
+    description: "Power action on a server. stop and restart interrupt whatever runs on it.",
     input: { vpsId, action: exports_external.enum(["start", "stop", "restart"]) },
     run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/${a.action}`)
   }),
@@ -35524,7 +35524,7 @@ var vpsTools = [
     name: "reinstall_vps",
     title: "Reinstall VPS",
     kind: "destructive",
-    description: "Wipe the disk and install an operating system. ALL DATA ON THE SERVER IS LOST. Get explicit confirmation.",
+    description: "Wipe the disk and install an operating system. ALL DATA ON THE SERVER IS LOST.",
     input: { vpsId, osType: exports_external.string(), osVersion: exports_external.string(), rootPassword: password },
     run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/reinstall`, { body: { osType: a.osType, osVersion: a.osVersion, rootPassword: a.rootPassword } })
   }),
@@ -35540,7 +35540,7 @@ var vpsTools = [
     name: "get_vps_credentials",
     title: "Get VPS login",
     kind: "read",
-    description: "Login details: host, user (root, or Administrator on Windows), port, protocol (ssh or rdp) and password. Treat the password as a secret: don't echo it unless the user asks.",
+    description: "Login details: host, user (root, or Administrator on Windows), port, protocol (ssh or rdp) and password. The response contains the root password.",
     input: { vpsId },
     run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/credentials`)
   }),
@@ -35548,7 +35548,7 @@ var vpsTools = [
     name: "terminate_vps",
     title: "Terminate VPS",
     kind: "destructive",
-    description: "Delete a server permanently. ALL DATA IS LOST and there is no refund for the remaining period. Get explicit confirmation.",
+    description: "Delete a server permanently. ALL DATA IS LOST and there is no refund for the remaining period.",
     input: { vpsId },
     run: (a, api2) => api2.api("DELETE", `/vps/${a.vpsId}`)
   }),
@@ -35572,7 +35572,7 @@ var vpsTools = [
     name: "upgrade_vps",
     title: "Upgrade VPS plan",
     kind: "write",
-    description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. Call get_vps_upgrade_options first: use only a planId it lists, tell the user its price in IDR and that the server restarts, and wait for an explicit yes.",
+    description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. planId must be one listed by get_vps_upgrade_options, which also gives the price in IDR; the server restarts during the upgrade.",
     input: { vpsId, planId: exports_external.string() },
     run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/upgrade`, { body: { planId: a.planId } })
   }),
@@ -35580,7 +35580,7 @@ var vpsTools = [
     name: "get_vps_upgrade_options",
     title: "VPS upgrade options",
     kind: "read",
-    description: "Plans this server can move to (same family and region) with the price to pay now for the days left (IDR). Call it before upgrade_vps.",
+    description: "Plans this server can move to (same family and region) with the price to pay now for the days left (IDR). upgrade_vps accepts only a planId from this list.",
     input: { vpsId },
     run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/upgrade-options`)
   }),
@@ -35669,7 +35669,7 @@ var vpsTools = [
     name: "remove_vps_port",
     title: "Remove port forward",
     kind: "destructive",
-    description: "Remove a port forward (id from list_vps_ports). Whatever reaches the server through it stops working: confirm with the user.",
+    description: "Remove a port forward (id from list_vps_ports). Whatever reaches the server through it stops working.",
     input: { vpsId, allocationId: exports_external.string().uuid().describe("Port forward id from list_vps_ports") },
     run: (a, api2) => api2.api("DELETE", `/vps/${a.vpsId}/ports/${a.allocationId}`)
   }),
@@ -35693,7 +35693,7 @@ var vpsTools = [
     name: "remove_vps_ssh_key",
     title: "Remove SSH key",
     kind: "destructive",
-    description: "Remove an SSH key by fingerprint (from list_vps_ssh_keys). Whoever logs in with it loses access; make sure the user keeps another way in (another key or the root password).",
+    description: "Remove an SSH key by fingerprint (from list_vps_ssh_keys). Whoever logs in with it loses access (another key or the root password still works).",
     input: { vpsId, fingerprint: exports_external.string().min(8).max(100).describe("e.g. SHA256:abc…+/= as listed") },
     run: (a, api2) => api2.api("DELETE", `/vps/${a.vpsId}/ssh-keys/${a.fingerprint.trim().replace(/^SHA256:/, "").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`)
   }),
@@ -35702,7 +35702,7 @@ var vpsTools = [
     title: "Turn SSH on / off",
     kind: "write",
     idempotent: true,
-    description: "Turn SSH access to the server on or off (no change when it is already in that state). Turning it off locks out every SSH session and key: confirm with the user first. The server must be running.",
+    description: "Turn SSH access to the server on or off (no change when it is already in that state). Turning it off locks out every SSH session and key. The server must be running.",
     input: { vpsId, enabled: exports_external.boolean() },
     run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/ssh`, { body: { enabled: a.enabled } })
   }),
@@ -35726,7 +35726,7 @@ var vpsTools = [
     name: "apply_snapshot",
     title: "Roll back to snapshot",
     kind: "destructive",
-    description: "Roll the server's disk back to a snapshot. Everything written since is lost. Get explicit confirmation.",
+    description: "Roll the server's disk back to a snapshot. Everything written since is lost.",
     input: { vpsId, snapshotId: exports_external.string() },
     run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/snapshots/${a.snapshotId}/apply`)
   }),
@@ -35758,7 +35758,7 @@ var vpsTools = [
     name: "activate_vps_backup",
     title: "Turn on VPS backups",
     kind: "write",
-    description: "Turn on daily backups for a running Linux server. COSTS MONEY right away: the whole period (1 or 12 months) is charged from the wallet and there is no dry run. Get priceMonthly / priceYearly from list_backup_plans, tell the user the price in IDR and wait for an explicit yes. The server must be running.",
+    description: "Turn on daily backups for a running Linux server. COSTS MONEY right away: the whole period (1 or 12 months) is charged from the wallet and there is no dry run. Prices (priceMonthly / priceYearly, IDR) are in list_backup_plans. The server must be running.",
     input: {
       vpsId,
       planCode: exports_external.string().max(30).describe("Plan code from list_backup_plans"),
@@ -35785,7 +35785,7 @@ var vpsTools = [
     name: "cancel_vps_backup",
     title: "Cancel VPS backups",
     kind: "destructive",
-    description: "Stop renewing the server's backups. Backups keep running until the paid period ends; after that and a grace period the backups are DELETED and can no longer be restored. Confirm with the user. (update_vps_backup autoRenew=true undoes it before the end.)",
+    description: "Stop renewing the server's backups. Backups keep running until the paid period ends; after that and a grace period the backups are DELETED and can no longer be restored. (update_vps_backup autoRenew=true undoes it before the end.)",
     input: { vpsId },
     run: (a, api2) => api2.api("DELETE", `/vps/${a.vpsId}/backup`)
   }),
@@ -35825,7 +35825,7 @@ var vpsTools = [
     name: "restore_vps_backup",
     title: "Restore VPS from backup",
     kind: "destructive",
-    description: "Restore from a restore point. mode=full puts the WHOLE disk back to that moment: everything written since is LOST and the server is offline while it restores. mode=files restores 1-50 paths: target=folder (default) puts them in a separate folder on the server, target=inplace OVERWRITES the current files. Name what will be overwritten and get explicit confirmation. Runs in the background: follow it with list_vps_backup_runs.",
+    description: "Restore from a restore point. mode=full puts the WHOLE disk back to that moment: everything written since is LOST and the server is offline while it restores. mode=files restores 1-50 paths: target=folder (default) puts them in a separate folder on the server, target=inplace OVERWRITES the current files. Files at those paths are overwritten. Runs in the background: follow it with list_vps_backup_runs.",
     input: {
       vpsId,
       pointId,
@@ -35847,7 +35847,7 @@ var vpsTools = [
     name: "get_vps_backup_download",
     title: "Get backup download link",
     kind: "read",
-    description: "Status of a prepared backup download; when ready, a short-lived url for the user to open (it expires at expiresAt). Give the user the link; do not download it yourself.",
+    description: "Status of a prepared backup download; when ready, a short-lived url for the user to open (it expires at expiresAt). The link is for the user to download in a browser.",
     input: { vpsId, downloadId: exports_external.string() },
     run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/backup/downloads/${a.downloadId}`)
   })
@@ -35857,7 +35857,7 @@ var vpsTools = [
 var domainId = exports_external.number().int().positive().describe("Domain id (number, from list_my_domains)");
 var hostId = exports_external.number().int().positive().describe("Child nameserver id (from list_child_nameservers)");
 var dryRun2 = exports_external.boolean().optional().describe("true = return the exact price (IDR, VAT included) and the wallet balance after it; nothing is charged or registered");
-var DRY = "Call with dryRun=true first, tell the user the price and walletBalanceAfter, and wait for an explicit yes before the real call.";
+var DRY = "dryRun=true returns the price and walletBalanceAfter without charging or changing anything.";
 var record3 = exports_external.object({
   name: exports_external.string().describe('"@" for the domain itself, or a label like "www"'),
   type: exports_external.enum(["A", "AAAA", "MX", "MXE", "CNAME", "SPF", "TXT"]),
@@ -35910,7 +35910,7 @@ var domainTools = [
     title: "Update owner details",
     kind: "write",
     idempotent: true,
-    description: "Set the account's domain owner (registrant) details the registrar needs: name, phone, addressLine1, city, state, countryCode and postalCode are required for a complete profile (organization, addressLine2 and fax are optional). Send only fields to change. This is personal data: use only what the user gave you, never invent or guess it, and don't repeat it back needlessly. The answer says whether the details are now complete and which fields are still missing (it never echoes them).",
+    description: "Set the account's domain owner (registrant) details the registrar needs: name, phone, addressLine1, city, state, countryCode and postalCode are required for a complete profile (organization, addressLine2 and fax are optional). Send only fields to change. These are personal details of the domain owner, stored as given. The answer says whether the details are now complete and which fields are still missing (it never echoes them).",
     input: {
       name: exports_external.string().min(1).max(255).optional().describe("Owner's full name"),
       organization: exports_external.string().max(255).optional().describe("Company / organization (optional)"),
@@ -35970,7 +35970,7 @@ var domainTools = [
     name: "set_dns_records",
     title: "Replace DNS records",
     kind: "destructive",
-    description: "Replace ALL DNS records of the domain with this list. Read list_dns_records first and include every record to keep.",
+    description: "Replace ALL DNS records of the domain with this list. Records not included are deleted (list_dns_records returns the current ones).",
     input: { domainId, records: exports_external.array(record3).min(1) },
     run: (a, api2) => api2.api("POST", `/domains/${a.domainId}/dns`, { body: { records: a.records } })
   }),
@@ -35995,7 +35995,7 @@ var domainTools = [
     name: "enable_whois_privacy",
     title: "Enable WHOIS privacy",
     kind: "write",
-    description: "Hide the owner's details in WHOIS. COSTS MONEY (the whois_protection price per year). Confirm with the user.",
+    description: "Hide the owner's details in WHOIS. COSTS MONEY (the whois_protection price per year).",
     input: { domainId },
     run: (a, api2) => api2.api("POST", `/domains/${a.domainId}/whois-protection`)
   }),
@@ -36011,7 +36011,7 @@ var domainTools = [
     name: "whois_lookup",
     title: "WHOIS lookup",
     kind: "read",
-    description: "Public WHOIS record of any domain name: registrar, dates, status, nameservers. Use search_domain to check availability instead.",
+    description: "Public WHOIS record of any domain name: registrar, dates, status, nameservers. Availability is checked by search_domain.",
     input: { domain: exports_external.string().describe("e.g. example.com") },
     run: (a, api2) => api2.api("GET", "/domains/whois", { query: { domain: a.domain } })
   }),
@@ -36020,7 +36020,7 @@ var domainTools = [
     title: "Update one DNS record",
     kind: "write",
     idempotent: true,
-    description: "Set one DNS record (by name and type) to new content, leaving the other records as they are. Safer than set_dns_records for a single change; read list_dns_records first.",
+    description: "Set one DNS record (by name and type) to new content, leaving the other records as they are. Changes one record and leaves the others as they are (list_dns_records returns record ids).",
     input: { domainId, ...record3.shape },
     run: (a, api2) => api2.api("PUT", `/domains/${a.domainId}/dns`, { body: { name: a.name, type: a.type, content: a.content, ttl: a.ttl } })
   }),
@@ -36069,7 +36069,7 @@ var domainTools = [
     name: "disable_whois_privacy",
     title: "Disable WHOIS privacy",
     kind: "destructive",
-    description: "Turn WHOIS privacy off: the owner's name, address, email and phone become PUBLIC in WHOIS (no refund; turning it back on with enable_whois_privacy costs money). Get explicit confirmation.",
+    description: "Turn WHOIS privacy off: the owner's name, address, email and phone become PUBLIC in WHOIS (no refund; turning it back on with enable_whois_privacy costs money).",
     input: { domainId },
     run: (a, api2) => api2.api("DELETE", `/domains/${a.domainId}/whois-protection`)
   })
@@ -36104,10 +36104,10 @@ var message = exports_external.object({
 });
 var dryRun3 = exports_external.boolean().optional().describe("true = return the price (IDR) and the wallet balance after it; nothing is charged or changed");
 var idem2 = exports_external.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real purchase. Generated when omitted; pass the same value when retrying so it is never charged twice");
-var MONEY = "COSTS MONEY from the wallet. Call with dryRun=true first, tell the user the charge (IDR) and walletBalanceAfter, and wait for an explicit yes before the real call.";
+var MONEY = "COSTS MONEY from the wallet. dryRun=true returns the charge (IDR) and walletBalanceAfter without charging or changing anything.";
 var planCode = exports_external.string().min(1).max(50).describe("Plan code from list_email_plans");
 var folder = exports_external.enum(["inbox", "spam", "archive", "trash"]);
-var AUDIENCE = "Before it goes out, tell the user how many people it reaches: get_email_broadcast for its segmentId/topicId, then the segment's contactCount (list_email_segments) or preview_email_segment with no rules for all contacts (unsubscribed and suppressed addresses are skipped).";
+var AUDIENCE = "It goes to every contact in the broadcast's segment or topic (unsubscribed and suppressed addresses are skipped); the audience size is the segment's contactCount in list_email_segments, or preview_email_segment with no rules for all contacts.";
 var emailTools = [
   defineTool({
     name: "email_status",
@@ -36176,7 +36176,7 @@ var emailTools = [
     name: "buy_email_inbox_addon",
     title: "Set inbox add-ons",
     kind: "write",
-    description: `Set the TOTAL extra mailboxes and extra inbox storage on the active paid plan (absolute numbers, not additions: read get_email_plan first and add to the current values). Increases are charged now, prorated to the plan's end date, then renew with the plan; decreases must still fit what is in use. ${MONEY}`,
+    description: `Set the TOTAL extra mailboxes and extra inbox storage on the active paid plan (absolute numbers, not additions; get_email_plan returns the current values). Increases are charged now, prorated to the plan's end date, then renew with the plan; decreases must still fit what is in use. ${MONEY}`,
     input: {
       projectId,
       extraMailboxes: exports_external.number().int().min(0).max(50).describe("Total extra mailboxes wanted (0-50)"),
@@ -36241,7 +36241,7 @@ var emailTools = [
     name: "add_email_domain",
     title: "Add sending domain",
     kind: "write",
-    description: "Add a sending domain; the response lists the DNS records the user must create, then call verify_email_domain.",
+    description: "Add a sending domain; the response lists the DNS records the domain needs; verify_email_domain checks them.",
     input: { projectId, domain: exports_external.string() },
     run: (a, api2) => api2.email("POST", "/domains", { body: { domain: a.domain }, project: a.projectId })
   }),
@@ -36305,7 +36305,7 @@ var emailTools = [
     name: "delete_email_domain",
     title: "Delete sending domain",
     kind: "destructive",
-    description: "Remove a sending domain: email can no longer be sent from its addresses. Confirm with the user.",
+    description: "Remove a sending domain: email can no longer be sent from its addresses.",
     input: { projectId, domainId: exports_external.string() },
     run: (a, api2) => api2.email("DELETE", `/domains/${a.domainId}`, { project: a.projectId })
   }),
@@ -36351,7 +36351,7 @@ var emailTools = [
     name: "delete_email_template",
     title: "Delete email template",
     kind: "destructive",
-    description: "Delete a template. Code that still sends with its templateId will fail. Confirm with the user.",
+    description: "Delete a template. Code that still sends with its templateId will fail.",
     input: { projectId, templateId: exports_external.string() },
     run: (a, api2) => api2.email("DELETE", `/templates/${a.templateId}`, { project: a.projectId })
   }),
@@ -36407,7 +36407,7 @@ var emailTools = [
     name: "delete_email_contact",
     title: "Delete email contact",
     kind: "destructive",
-    description: "Delete a contact and its history. To stop emailing someone, prefer unsubscribe_email_contact (keeps the opt-out on record). Confirm with the user.",
+    description: "Delete a contact and its history. unsubscribe_email_contact stops emails and keeps the opt-out on record; this deletes the contact.",
     input: { projectId, contactId: uid("Contact") },
     run: (a, api2) => api2.email("DELETE", `/contacts/${a.contactId}`, { project: a.projectId })
   }),
@@ -36464,7 +36464,7 @@ var emailTools = [
     name: "delete_email_segment",
     title: "Delete segment",
     kind: "destructive",
-    description: "Delete a segment (its contacts are kept). Confirm with the user.",
+    description: "Delete a segment (its contacts are kept).",
     input: { projectId, segmentId: uid("Segment") },
     run: (a, api2) => api2.email("DELETE", `/segments/${a.segmentId}`, { project: a.projectId })
   }),
@@ -36504,7 +36504,7 @@ var emailTools = [
     name: "delete_email_topic",
     title: "Delete topic",
     kind: "destructive",
-    description: "Delete a topic and every contact's subscription to it. Confirm with the user.",
+    description: "Delete a topic and every contact's subscription to it.",
     input: { projectId, topicId: uid("Topic") },
     run: (a, api2) => api2.email("DELETE", `/topics/${a.topicId}`, { project: a.projectId })
   }),
@@ -36614,7 +36614,7 @@ var emailTools = [
     name: "delete_email_suppression",
     title: "Remove suppression",
     kind: "destructive",
-    description: "Allow an address to be emailed again. Only when the person asked for it or the bounce was fixed: emailing addresses that bounced or complained hurts the project's sending reputation. Confirm with the user.",
+    description: "Allow an address to be emailed again. Only when the person asked for it or the bounce was fixed: emailing addresses that bounced or complained hurts the project's sending reputation.",
     input: { projectId, suppressionId: exports_external.string() },
     run: (a, api2) => api2.email("DELETE", `/suppressions/${a.suppressionId}`, { project: a.projectId })
   }),
@@ -36630,7 +36630,7 @@ var emailTools = [
     name: "create_email_webhook",
     title: "Create email webhook",
     kind: "write",
-    description: "POST email events to an HTTPS URL. The response holds the signing secret ONCE: tell the user to store it (e.g. as a secret variable), don't print it elsewhere.",
+    description: "POST email events to an HTTPS URL. The response holds the signing secret ONCE: it is not shown again.",
     input: {
       projectId,
       url: exports_external.string().min(8).max(2000),
@@ -36642,7 +36642,7 @@ var emailTools = [
     name: "delete_email_webhook",
     title: "Delete email webhook",
     kind: "destructive",
-    description: "Stop sending events to a webhook URL. Confirm with the user.",
+    description: "Stop sending events to a webhook URL.",
     input: { projectId, webhookId: uid("Webhook") },
     run: (a, api2) => api2.email("DELETE", `/webhooks/${a.webhookId}`, { project: a.projectId })
   }),
@@ -36691,7 +36691,7 @@ var emailTools = [
     name: "delete_inbox_address",
     title: "Delete inbox address",
     kind: "destructive",
-    description: "Delete a receiving address: mail to it is no longer accepted (messages already received are kept). Confirm with the user.",
+    description: "Delete a receiving address: mail to it is no longer accepted (messages already received are kept).",
     input: { projectId, addressId: uid("Address") },
     run: (a, api2) => api2.email("DELETE", `/inbound/addresses/${a.addressId}`, { project: a.projectId })
   }),
@@ -36727,7 +36727,7 @@ var emailTools = [
     name: "reply_inbox_message",
     title: "Reply to inbox message",
     kind: "write",
-    description: "Send a threaded reply to a received message (counts against the sending quota). Show the user the reply text before sending.",
+    description: "Send a threaded reply to a received message (counts against the sending quota). The reply is sent from the inbox address.",
     input: {
       projectId,
       messageId: uid("Message"),
@@ -36742,7 +36742,7 @@ var emailTools = [
     name: "delete_inbox_message",
     title: "Delete inbox message",
     kind: "destructive",
-    description: "Delete a received message permanently. Confirm with the user.",
+    description: "Delete a received message permanently.",
     input: { projectId, messageId: uid("Message") },
     run: (a, api2) => api2.email("DELETE", `/inbound/messages/${a.messageId}`, { project: a.projectId })
   })
@@ -36823,7 +36823,7 @@ var databaseTools = [
     name: "delete_database_branch",
     title: "Delete database branch",
     kind: "destructive",
-    description: "Delete an environment's branch and its data. The primary (production) branch cannot be deleted. Confirm with the user.",
+    description: "Delete an environment's branch and its data. The primary (production) branch cannot be deleted.",
     input: { databaseId, environmentId: exports_external.string().uuid() },
     run: (a, api2) => api2.api("DELETE", `/databases/${a.databaseId}/branches/${a.environmentId}`)
   }),
@@ -36864,7 +36864,7 @@ var databaseTools = [
     name: "suspend_database",
     title: "Suspend database",
     kind: "destructive",
-    description: "Stop the database's compute (connections fail until resumed). Confirm with the user.",
+    description: "Stop the database's compute (connections fail until resumed).",
     input: { databaseId },
     run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/suspend`)
   }),
@@ -36925,7 +36925,7 @@ var databaseTools = [
     name: "browse_database_table",
     title: "Browse table rows",
     kind: "read",
-    description: "Rows of a table, a page at a time (limit up to 200, offset to page). Read-only. Rows are the customer's data: don't repeat sensitive columns (passwords, tokens) unless the user asks.",
+    description: "Rows of a table, a page at a time (limit up to 200, offset to page). Read-only. Rows are returned as stored, including any sensitive columns.",
     input: {
       databaseId,
       table: exports_external.string().min(1).max(63),
@@ -36939,7 +36939,7 @@ var databaseTools = [
     name: "query_database",
     title: "Query database (read-only)",
     kind: "read",
-    description: "Run a read-only SQL statement (SELECT, EXPLAIN, SHOW…) in a read-only transaction; up to 200 rows. Use $1, $2… placeholders with params. Statements that change data are refused: use execute_database_sql.",
+    description: "Run a read-only SQL statement (SELECT, EXPLAIN, SHOW…) in a read-only transaction; up to 200 rows. Use $1, $2… placeholders with params. Statements that change data are refused (execute_database_sql runs those).",
     input: { databaseId, sql: exports_external.string().min(1).max(1e4), params: exports_external.array(exports_external.any()).max(100).optional(), environmentId: environmentId.optional() },
     run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/query`, { body: { sql: a.sql, params: a.params, environmentId: a.environmentId } })
   }),
@@ -36947,7 +36947,7 @@ var databaseTools = [
     name: "classify_database_sql",
     title: "Classify SQL (no run)",
     kind: "read",
-    description: "What a SQL statement is (command, e.g. select / update / drop) and whether it writes, WITHOUT running it. Call it before execute_database_sql to tell the user exactly what will change; readOnly statements go to query_database.",
+    description: "What a SQL statement is (command, e.g. select / update / drop) and whether it writes, WITHOUT running it. It reports what a statement would change before execute_database_sql runs it; readOnly statements can run with query_database.",
     input: { databaseId, sql: exports_external.string().min(1).max(1e4) },
     run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/query/classify`, { body: { sql: a.sql } })
   }),
@@ -36955,7 +36955,7 @@ var databaseTools = [
     name: "execute_database_sql",
     title: "Execute SQL (writes)",
     kind: "destructive",
-    description: "Run a statement that changes data or schema (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP…). First call classify_database_sql to see what the statement does (a read-only one belongs in query_database). Then show the statement, what it changes and the target environment to the user and get explicit confirmation; prefer a staging branch for migrations.",
+    description: "Run a statement that changes data or schema (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP…). classify_database_sql reports what a statement does without running it. It runs on the chosen environment's branch.",
     input: { databaseId, sql: exports_external.string().min(1).max(1e4), params: exports_external.array(exports_external.any()).max(100).optional(), environmentId: environmentId.optional() },
     run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/query`, { body: { sql: a.sql, params: a.params, environmentId: a.environmentId, allowWrite: true } })
   })
@@ -37045,7 +37045,7 @@ var accountTools = [
     title: "Mark all notifications read",
     kind: "write",
     idempotent: true,
-    description: "Mark every unread notification as read (a project key: its project's only). Ask the user first: they may want to read them in the dashboard.",
+    description: "Mark every unread notification as read (a project key: its project's only). Marks every notification as read.",
     input: {},
     run: (_a3, api2) => api2.api("POST", "/account/notifications/read-all")
   }),
@@ -37083,7 +37083,7 @@ var accountTools = [
     name: "create_support_ticket",
     title: "Open support ticket",
     kind: "write",
-    description: `Open a ticket with Helipod support (at most 5 an hour; reply to an open ticket instead of opening another). Show the user the subject and message before sending, and never include passwords, API keys or other secrets. ${ACCOUNT_KEY}`,
+    description: `Open a ticket with Helipod support (at most 5 an hour; replies go to an open ticket with reply_support_ticket). The subject and message are sent to Helipod support as written. ${ACCOUNT_KEY}`,
     input: {
       subject: exports_external.string().min(3).max(255),
       category: exports_external.enum(["billing", "technical", "feature_request", "other"]),
@@ -37105,7 +37105,7 @@ var accountTools = [
     title: "Close support ticket",
     kind: "write",
     idempotent: true,
-    description: `Close a support ticket once the issue is solved (a closed ticket takes no more replies). Ask the user first. ${ACCOUNT_KEY}`,
+    description: `Close a support ticket once the issue is solved (a closed ticket takes no more replies). ${ACCOUNT_KEY}`,
     input: { ticketId: uid2("Ticket") },
     run: (a, api2) => api2.api("POST", `/account/tickets/${a.ticketId}/close`)
   })
@@ -37162,7 +37162,7 @@ var aiTools = [
     name: "revoke_ai_key",
     title: "Revoke AI key",
     kind: "destructive",
-    description: "Revoke an AI key permanently: every app using it stops working at once and it cannot be restored (a new key must be made in the dashboard and deployed). Name the key and get explicit confirmation.",
+    description: "Revoke an AI key permanently: every app using it stops working at once and it cannot be restored (a new key must be made in the dashboard and deployed).",
     input: { keyId: exports_external.string().uuid().describe("AI key id from list_ai_keys") },
     run: (a, api2) => api2.api("DELETE", `/ai/keys/${a.keyId}`)
   }),
@@ -37170,7 +37170,7 @@ var aiTools = [
     name: "topup_ai_balance",
     title: "Top up AI balance",
     kind: "write",
-    description: `Move money from the wallet to the AI balance, by pack (packId from get_ai_overview, may include a bonus) or by amount (IDR, at least minTopup). COSTS MONEY from the wallet. Call with dryRun=true first, tell the user the amount, bonus and balances after, and wait for an explicit yes before the real call. ${ACCOUNT_KEY2}`,
+    description: `Move money from the wallet to the AI balance, by pack (packId from get_ai_overview, may include a bonus) or by amount (IDR, at least minTopup). COSTS MONEY from the wallet. dryRun=true returns the amount, bonus and balances after without charging. ${ACCOUNT_KEY2}`,
     input: {
       packId: exports_external.string().min(1).max(64).optional(),
       amount: exports_external.number().min(1).max(1e9).optional().describe("IDR"),
@@ -37192,7 +37192,7 @@ var aiTools = [
     title: "Set AI auto top-up",
     kind: "write",
     idempotent: true,
-    description: `Automatic top-up: when the AI balance falls below threshold (IDR), amount (IDR) is moved from the wallet. Enabling it COSTS MONEY later, without asking each time: call with dryRun=true first, tell the user the current and new settings, and wait for an explicit yes. enabled=false turns it off. ${ACCOUNT_KEY2}`,
+    description: `Automatic top-up: when the AI balance falls below threshold (IDR), amount (IDR) is moved from the wallet. Enabling it COSTS MONEY later: top-ups then run automatically. dryRun=true returns the current and new settings without changing them. enabled=false turns it off. ${ACCOUNT_KEY2}`,
     input: {
       enabled: exports_external.boolean(),
       threshold: exports_external.number().min(1).optional().describe("Top up when the AI balance is below this (IDR)"),
@@ -37233,12 +37233,13 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.2";
+var VERSION = "0.5.3";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
 - Destructive tools (delete, terminate, reinstall, rollback, restore a backup, replace DNS, revoke a key, remove an SSH key or port forward, send a broadcast, execute_database_sql): confirm with the user and name what will be lost. Before execute_database_sql, run classify_database_sql.
 - Email: when a project has no email yet (email_status shows activated false) or its plan ended, start it with buy_email_plan (dryRun first; the FREE plan costs nothing, still confirm). That also sets email up for the project; then add and verify a sending domain.
+- Before replacing all DNS records (set_dns_records), read list_dns_records and keep every record the user still needs. Before sending or scheduling a broadcast, tell the user how many contacts it reaches. Before deleting or replacing code, files or variables, read the current value. After renaming a service, fix the variable references listed in warnings.
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
 - Deploys and VPS actions run in the background: poll get_deployment / get_vps until they settle; on a failed deploy read get_deployment_logs.
 - Never print secrets (passwords, secret variable values, secret files) unless the user asks for them. Domain owner details are personal data: use only what the user gave.

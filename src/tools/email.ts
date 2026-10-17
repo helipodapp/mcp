@@ -25,10 +25,10 @@ const message = z.object({
 });
 const dryRun = z.boolean().optional().describe("true = return the price (IDR) and the wallet balance after it; nothing is charged or changed");
 const idem = z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real purchase. Generated when omitted; pass the same value when retrying so it is never charged twice");
-const MONEY = "COSTS MONEY from the wallet. Call with dryRun=true first, tell the user the charge (IDR) and walletBalanceAfter, and wait for an explicit yes before the real call.";
+const MONEY = "COSTS MONEY from the wallet. dryRun=true returns the charge (IDR) and walletBalanceAfter without charging or changing anything.";
 const planCode = z.string().min(1).max(50).describe("Plan code from list_email_plans");
 const folder = z.enum(["inbox", "spam", "archive", "trash"]);
-const AUDIENCE = "Before it goes out, tell the user how many people it reaches: get_email_broadcast for its segmentId/topicId, then the segment's contactCount (list_email_segments) or preview_email_segment with no rules for all contacts (unsubscribed and suppressed addresses are skipped).";
+const AUDIENCE = "It goes to every contact in the broadcast's segment or topic (unsubscribed and suppressed addresses are skipped); the audience size is the segment's contactCount in list_email_segments, or preview_email_segment with no rules for all contacts.";
 
 export const emailTools = [
     defineTool({
@@ -78,7 +78,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "buy_email_inbox_addon", title: "Set inbox add-ons", kind: "write",
-        description: `Set the TOTAL extra mailboxes and extra inbox storage on the active paid plan (absolute numbers, not additions: read get_email_plan first and add to the current values). Increases are charged now, prorated to the plan's end date, then renew with the plan; decreases must still fit what is in use. ${MONEY}`,
+        description: `Set the TOTAL extra mailboxes and extra inbox storage on the active paid plan (absolute numbers, not additions; get_email_plan returns the current values). Increases are charged now, prorated to the plan's end date, then renew with the plan; decreases must still fit what is in use. ${MONEY}`,
         input: {
             projectId,
             extraMailboxes: z.number().int().min(0).max(50).describe("Total extra mailboxes wanted (0-50)"),
@@ -126,7 +126,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "add_email_domain", title: "Add sending domain", kind: "write",
-        description: "Add a sending domain; the response lists the DNS records the user must create, then call verify_email_domain.",
+        description: "Add a sending domain; the response lists the DNS records the domain needs; verify_email_domain checks them.",
         input: { projectId, domain: z.string() },
         run: (a, api) => api.email("POST", "/domains", { body: { domain: a.domain }, project: a.projectId }),
     }),
@@ -176,7 +176,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "delete_email_domain", title: "Delete sending domain", kind: "destructive",
-        description: "Remove a sending domain: email can no longer be sent from its addresses. Confirm with the user.",
+        description: "Remove a sending domain: email can no longer be sent from its addresses.",
         input: { projectId, domainId: z.string() },
         run: (a, api) => api.email("DELETE", `/domains/${a.domainId}`, { project: a.projectId }),
     }),
@@ -208,7 +208,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "delete_email_template", title: "Delete email template", kind: "destructive",
-        description: "Delete a template. Code that still sends with its templateId will fail. Confirm with the user.",
+        description: "Delete a template. Code that still sends with its templateId will fail.",
         input: { projectId, templateId: z.string() },
         run: (a, api) => api.email("DELETE", `/templates/${a.templateId}`, { project: a.projectId }),
     }),
@@ -247,7 +247,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "delete_email_contact", title: "Delete email contact", kind: "destructive",
-        description: "Delete a contact and its history. To stop emailing someone, prefer unsubscribe_email_contact (keeps the opt-out on record). Confirm with the user.",
+        description: "Delete a contact and its history. unsubscribe_email_contact stops emails and keeps the opt-out on record; this deletes the contact.",
         input: { projectId, contactId: uid("Contact") },
         run: (a, api) => api.email("DELETE", `/contacts/${a.contactId}`, { project: a.projectId }),
     }),
@@ -288,7 +288,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "delete_email_segment", title: "Delete segment", kind: "destructive",
-        description: "Delete a segment (its contacts are kept). Confirm with the user.",
+        description: "Delete a segment (its contacts are kept).",
         input: { projectId, segmentId: uid("Segment") },
         run: (a, api) => api.email("DELETE", `/segments/${a.segmentId}`, { project: a.projectId }),
     }),
@@ -317,7 +317,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "delete_email_topic", title: "Delete topic", kind: "destructive",
-        description: "Delete a topic and every contact's subscription to it. Confirm with the user.",
+        description: "Delete a topic and every contact's subscription to it.",
         input: { projectId, topicId: uid("Topic") },
         run: (a, api) => api.email("DELETE", `/topics/${a.topicId}`, { project: a.projectId }),
     }),
@@ -395,7 +395,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "delete_email_suppression", title: "Remove suppression", kind: "destructive",
-        description: "Allow an address to be emailed again. Only when the person asked for it or the bounce was fixed: emailing addresses that bounced or complained hurts the project's sending reputation. Confirm with the user.",
+        description: "Allow an address to be emailed again. Only when the person asked for it or the bounce was fixed: emailing addresses that bounced or complained hurts the project's sending reputation.",
         input: { projectId, suppressionId: z.string() },
         run: (a, api) => api.email("DELETE", `/suppressions/${a.suppressionId}`, { project: a.projectId }),
     }),
@@ -409,7 +409,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "create_email_webhook", title: "Create email webhook", kind: "write",
-        description: "POST email events to an HTTPS URL. The response holds the signing secret ONCE: tell the user to store it (e.g. as a secret variable), don't print it elsewhere.",
+        description: "POST email events to an HTTPS URL. The response holds the signing secret ONCE: it is not shown again.",
         input: {
             projectId, url: z.string().min(8).max(2000),
             events: z.array(z.enum(["email.sent", "email.delivered", "email.bounced", "email.complained", "email.opened", "email.clicked", "email.rejected", "email.failed", "email.received"])).min(1).max(20),
@@ -418,7 +418,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "delete_email_webhook", title: "Delete email webhook", kind: "destructive",
-        description: "Stop sending events to a webhook URL. Confirm with the user.",
+        description: "Stop sending events to a webhook URL.",
         input: { projectId, webhookId: uid("Webhook") },
         run: (a, api) => api.email("DELETE", `/webhooks/${a.webhookId}`, { project: a.projectId }),
     }),
@@ -452,7 +452,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "delete_inbox_address", title: "Delete inbox address", kind: "destructive",
-        description: "Delete a receiving address: mail to it is no longer accepted (messages already received are kept). Confirm with the user.",
+        description: "Delete a receiving address: mail to it is no longer accepted (messages already received are kept).",
         input: { projectId, addressId: uid("Address") },
         run: (a, api) => api.email("DELETE", `/inbound/addresses/${a.addressId}`, { project: a.projectId }),
     }),
@@ -475,7 +475,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "reply_inbox_message", title: "Reply to inbox message", kind: "write",
-        description: "Send a threaded reply to a received message (counts against the sending quota). Show the user the reply text before sending.",
+        description: "Send a threaded reply to a received message (counts against the sending quota). The reply is sent from the inbox address.",
         input: {
             projectId, messageId: uid("Message"), text: z.string().max(500000).optional(), html: z.string().max(1000000).optional(),
             replyAll: z.boolean().optional(), from: z.string().max(320).optional().describe("Default: the address it was sent to"),
@@ -484,7 +484,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "delete_inbox_message", title: "Delete inbox message", kind: "destructive",
-        description: "Delete a received message permanently. Confirm with the user.",
+        description: "Delete a received message permanently.",
         input: { projectId, messageId: uid("Message") },
         run: (a, api) => api.email("DELETE", `/inbound/messages/${a.messageId}`, { project: a.projectId }),
     }),

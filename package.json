@@ -1,6 +1,6 @@
 {
   "name": "helipod-mcp",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "MCP server for Helipod: containers, databases, VPS, domains and email from Claude Code, Codex, Cursor and other AI tools.",
   "type": "module",
   "bin": {

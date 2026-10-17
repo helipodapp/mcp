@@ -58,7 +58,7 @@ export const databaseTools = [
     }),
     defineTool({
         name: "delete_database_branch", title: "Delete database branch", kind: "destructive",
-        description: "Delete an environment's branch and its data. The primary (production) branch cannot be deleted. Confirm with the user.",
+        description: "Delete an environment's branch and its data. The primary (production) branch cannot be deleted.",
         input: { databaseId, environmentId: z.string().uuid() },
         run: (a, api) => api.api("DELETE", `/databases/${a.databaseId}/branches/${a.environmentId}`),
     }),
@@ -90,7 +90,7 @@ export const databaseTools = [
     }),
     defineTool({
         name: "suspend_database", title: "Suspend database", kind: "destructive",
-        description: "Stop the database's compute (connections fail until resumed). Confirm with the user.",
+        description: "Stop the database's compute (connections fail until resumed).",
         input: { databaseId },
         run: (a, api) => api.api("POST", `/databases/${a.databaseId}/suspend`),
     }),
@@ -136,7 +136,7 @@ export const databaseTools = [
     }),
     defineTool({
         name: "browse_database_table", title: "Browse table rows", kind: "read",
-        description: "Rows of a table, a page at a time (limit up to 200, offset to page). Read-only. Rows are the customer's data: don't repeat sensitive columns (passwords, tokens) unless the user asks.",
+        description: "Rows of a table, a page at a time (limit up to 200, offset to page). Read-only. Rows are returned as stored, including any sensitive columns.",
         input: {
             databaseId, table: z.string().min(1).max(63), environmentId: environmentId.optional(),
             limit: z.number().int().min(1).max(200).optional(), offset: z.number().int().min(0).optional(),
@@ -145,19 +145,19 @@ export const databaseTools = [
     }),
     defineTool({
         name: "query_database", title: "Query database (read-only)", kind: "read",
-        description: "Run a read-only SQL statement (SELECT, EXPLAIN, SHOW…) in a read-only transaction; up to 200 rows. Use $1, $2… placeholders with params. Statements that change data are refused: use execute_database_sql.",
+        description: "Run a read-only SQL statement (SELECT, EXPLAIN, SHOW…) in a read-only transaction; up to 200 rows. Use $1, $2… placeholders with params. Statements that change data are refused (execute_database_sql runs those).",
         input: { databaseId, sql: z.string().min(1).max(10000), params: z.array(z.any()).max(100).optional(), environmentId: environmentId.optional() },
         run: (a, api) => api.api("POST", `/databases/${a.databaseId}/query`, { body: { sql: a.sql, params: a.params, environmentId: a.environmentId } }),
     }),
     defineTool({
         name: "classify_database_sql", title: "Classify SQL (no run)", kind: "read",
-        description: "What a SQL statement is (command, e.g. select / update / drop) and whether it writes, WITHOUT running it. Call it before execute_database_sql to tell the user exactly what will change; readOnly statements go to query_database.",
+        description: "What a SQL statement is (command, e.g. select / update / drop) and whether it writes, WITHOUT running it. It reports what a statement would change before execute_database_sql runs it; readOnly statements can run with query_database.",
         input: { databaseId, sql: z.string().min(1).max(10000) },
         run: (a, api) => api.api("POST", `/databases/${a.databaseId}/query/classify`, { body: { sql: a.sql } }),
     }),
     defineTool({
         name: "execute_database_sql", title: "Execute SQL (writes)", kind: "destructive",
-        description: "Run a statement that changes data or schema (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP…). First call classify_database_sql to see what the statement does (a read-only one belongs in query_database). Then show the statement, what it changes and the target environment to the user and get explicit confirmation; prefer a staging branch for migrations.",
+        description: "Run a statement that changes data or schema (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP…). classify_database_sql reports what a statement does without running it. It runs on the chosen environment's branch.",
         input: { databaseId, sql: z.string().min(1).max(10000), params: z.array(z.any()).max(100).optional(), environmentId: environmentId.optional() },
         run: (a, api) => api.api("POST", `/databases/${a.databaseId}/query`, { body: { sql: a.sql, params: a.params, environmentId: a.environmentId, allowWrite: true } }),
     }),

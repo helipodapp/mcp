@@ -65,7 +65,7 @@ export const accountTools = [
     }),
     defineTool({
         name: "mark_all_notifications_read", title: "Mark all notifications read", kind: "write", idempotent: true,
-        description: "Mark every unread notification as read (a project key: its project's only). Ask the user first: they may want to read them in the dashboard.",
+        description: "Mark every unread notification as read (a project key: its project's only). Marks every notification as read.",
         input: {},
         run: (_a, api) => api.api("POST", "/account/notifications/read-all"),
     }),
@@ -93,7 +93,7 @@ export const accountTools = [
     }),
     defineTool({
         name: "create_support_ticket", title: "Open support ticket", kind: "write",
-        description: `Open a ticket with Helipod support (at most 5 an hour; reply to an open ticket instead of opening another). Show the user the subject and message before sending, and never include passwords, API keys or other secrets. ${ACCOUNT_KEY}`,
+        description: `Open a ticket with Helipod support (at most 5 an hour; replies go to an open ticket with reply_support_ticket). The subject and message are sent to Helipod support as written. ${ACCOUNT_KEY}`,
         input: {
             subject: z.string().min(3).max(255),
             category: z.enum(["billing", "technical", "feature_request", "other"]),
@@ -110,7 +110,7 @@ export const accountTools = [
     }),
     defineTool({
         name: "close_support_ticket", title: "Close support ticket", kind: "write", idempotent: true,
-        description: `Close a support ticket once the issue is solved (a closed ticket takes no more replies). Ask the user first. ${ACCOUNT_KEY}`,
+        description: `Close a support ticket once the issue is solved (a closed ticket takes no more replies). ${ACCOUNT_KEY}`,
         input: { ticketId: uid("Ticket") },
         run: (a, api) => api.api("POST", `/account/tickets/${a.ticketId}/close`),
     }),
