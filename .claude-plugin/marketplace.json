@@ -9,7 +9,7 @@
     {
       "name": "helipod",
       "source": "./",
-      "description": "Helipod MCP server and skills: containers, VPS, domains, email and AI gateway."
+      "description": "Helipod MCP server and skills: containers, VPS, databases, domains, email and AI gateway."
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "name": "helipod",
-  "version": "0.3.0",
-  "description": "Deploy apps, run VPS servers, buy domains, send email and use the AI gateway on Helipod from Claude Code.",
+  "version": "0.5.3",
+  "description": "Deploy apps, run VPS servers, managed Postgres, domains, email and the AI gateway on Helipod from Claude.",
   "author": {
     "name": "Helipod",
     "url": "https://helipod.io"
