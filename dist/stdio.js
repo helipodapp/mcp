@@ -35466,7 +35466,7 @@ var containerTools = [
 ];
 
 // src/tools/vps.ts
-var vpsId = exports_external.string().describe("VPS id");
+var vpsId = exports_external.string().describe("VPS id from list_vps (not the name or hostname)");
 var password = exports_external.string().min(12).max(30).describe("12-30 characters with upper and lower case letters, a digit and one of ! @ # $ % ^ *");
 var period = exports_external.enum(["monthly", "3month", "6month", "yearly"]);
 var pointId = exports_external.string().describe("Restore point id (from list_vps_restore_points)");
@@ -35484,7 +35484,7 @@ var vpsTools = [
     name: "list_vps",
     title: "List VPS",
     kind: "read",
-    description: "Servers this key can reach, with status and public IP.",
+    description: "Every server this key can reach (all kinds), with status, providerCode (1 = shares a public address, 2/3 = own IP) and access: the host and SSH port to connect to.",
     input: { status: exports_external.string().optional().describe("e.g. running, stopped"), projectId: exports_external.string().uuid().optional() },
     run: (a, api2) => api2.api("GET", "/vps", { query: { status: a.status, projectId: a.projectId } })
   }),
@@ -35492,7 +35492,7 @@ var vpsTools = [
     name: "get_vps",
     title: "Get VPS",
     kind: "read",
-    description: "One server: status, IP, size, plan, expiry, last job. Poll it after an action until status is running, stopped, terminated or error.",
+    description: "One server: status, access (host and SSH port), providerCode, size, plan, expiry, last job. Poll it after an action until status is running, stopped, terminated or error.",
     input: { vpsId },
     run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}`)
   }),
@@ -35540,7 +35540,7 @@ var vpsTools = [
     name: "get_vps_credentials",
     title: "Get VPS login",
     kind: "read",
-    description: "Login details: host, user (root, or Administrator on Windows), port, protocol (ssh or rdp) and password. The response contains the root password.",
+    description: "Login details: host, user (root, or Administrator on Windows), port, protocol (ssh or rdp) and password. The response contains the root password. Only servers with providerCode 2 keep it (others: 409 FEATURE_NOT_AVAILABLE; the password is the one set at create or reset).",
     input: { vpsId },
     run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/credentials`)
   }),
@@ -35572,7 +35572,7 @@ var vpsTools = [
     name: "upgrade_vps",
     title: "Upgrade VPS plan",
     kind: "write",
-    description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. planId must be one listed by get_vps_upgrade_options, which also gives the price in IDR; the server restarts during the upgrade.",
+    description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. planId must be one listed by get_vps_upgrade_options, which also gives the price in IDR; the server restarts during the upgrade. Servers with providerCode 2 only.",
     input: { vpsId, planId: exports_external.string() },
     run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/upgrade`, { body: { planId: a.planId } })
   }),
@@ -35580,7 +35580,7 @@ var vpsTools = [
     name: "get_vps_upgrade_options",
     title: "VPS upgrade options",
     kind: "read",
-    description: "Plans this server can move to (same family and region) with the price to pay now for the days left (IDR). upgrade_vps accepts only a planId from this list.",
+    description: "Plans this server can move to (same family and region) with the price to pay now for the days left (IDR). upgrade_vps accepts only a planId from this list. Servers with providerCode 2 only.",
     input: { vpsId },
     run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/upgrade-options`)
   }),
@@ -35613,7 +35613,7 @@ var vpsTools = [
     name: "list_firewall_rules",
     title: "List firewall rules",
     kind: "read",
-    description: "Inbound firewall rules of a server.",
+    description: "Inbound firewall rules of a server. Servers with their own IP only (providerCode 2 or 3); shared-address servers use port forwards.",
     input: { vpsId },
     run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/firewall`)
   }),
@@ -35710,7 +35710,7 @@ var vpsTools = [
     name: "list_snapshots",
     title: "List snapshots",
     kind: "read",
-    description: "Disk snapshots of a server.",
+    description: "Disk snapshots of a server. Servers with their own IP only (providerCode 2 or 3).",
     input: { vpsId },
     run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/snapshots`)
   }),
@@ -37233,7 +37233,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.3";
+var VERSION = "0.5.4";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
