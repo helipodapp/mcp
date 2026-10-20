@@ -7,9 +7,9 @@ const hostId = z.number().int().positive().describe("Child nameserver id (from l
 const dryRun = z.boolean().optional().describe("true = return the exact price (IDR, VAT included) and the wallet balance after it; nothing is charged or registered");
 const DRY = "dryRun=true returns the price and walletBalanceAfter without charging or changing anything.";
 const record = z.object({
-    name: z.string().describe('"@" for the domain itself, or a label like "www"'),
+    name: z.string().describe('"@" for the domain itself, or the part before the domain, e.g. "www" or "_dmarc.mail". A full name like "www.example.com" is accepted and stored as "www"'),
     type: z.enum(["A", "AAAA", "MX", "MXE", "CNAME", "SPF", "TXT"]),
-    content: z.string(),
+    content: z.string().describe('TXT without surrounding quotes (they are added by the DNS server); MX as "10 mail.example.com"'),
     ttl: z.number().int().optional(),
 });
 
@@ -89,13 +89,13 @@ export const domainTools = [
     }),
     defineTool({
         name: "list_dns_records", title: "List DNS records", kind: "read",
-        description: "DNS records of a registered domain.",
+        description: "DNS records of a registered domain. prefix is the name relative to the domain (\"@\" for the domain itself); TXT content is shown with the quotes the DNS server adds. A domain with no records is not served at all (its nameservers answer REFUSED), so add at least one record for it to resolve.",
         input: { domainId },
         run: (a, api) => api.api("GET", `/domains/${a.domainId}/dns`),
     }),
     defineTool({
         name: "set_dns_records", title: "Replace DNS records", kind: "destructive",
-        description: "Replace ALL DNS records of the domain with this list. Records not included are deleted (list_dns_records returns the current ones).",
+        description: "Replace ALL DNS records of the domain with this list. Records not included are deleted: read list_dns_records first and send every record that should stay (prefix as name, content as listed; quotes around TXT are removed for you).",
         input: { domainId, records: z.array(record).min(1) },
         run: (a, api) => api.api("POST", `/domains/${a.domainId}/dns`, { body: { records: a.records } }),
     }),
@@ -134,6 +134,18 @@ export const domainTools = [
         description: "Set one DNS record (by name and type) to new content, leaving the other records as they are. Changes one record and leaves the others as they are (list_dns_records returns record ids).",
         input: { domainId, ...record.shape },
         run: (a, api) => api.api("PUT", `/domains/${a.domainId}/dns`, { body: { name: a.name, type: a.type, content: a.content, ttl: a.ttl } }),
+    }),
+    defineTool({
+        name: "list_domain_email_records", title: "Email records for a domain", kind: "read",
+        description: "Helipod Email sending domains inside this registered domain (e.g. mail.example.com), each DNS record they need and whether the domain has it: present, missing, or conflict (with what to change).",
+        input: { domainId },
+        run: (a, api) => api.api("GET", `/domains/${a.domainId}/email-records`),
+    }),
+    defineTool({
+        name: "add_domain_email_records", title: "Add email records to a domain", kind: "write",
+        description: "Add the DNS records a Helipod Email sending domain still needs to this registered domain (Helipod DNS only), then start its verification. Records that would clash (a CNAME on a name in use, a second SPF) are not changed and are listed in conflicts. emailDomainId comes from list_domain_email_records.",
+        input: { domainId, emailDomainId: z.string().uuid() },
+        run: (a, api) => api.api("POST", `/domains/${a.domainId}/email-records`, { body: { emailDomainId: a.emailDomainId } }),
     }),
     defineTool({
         name: "list_child_nameservers", title: "List child nameservers", kind: "read",

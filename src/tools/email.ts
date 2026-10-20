@@ -132,7 +132,7 @@ export const emailTools = [
     }),
     defineTool({
         name: "verify_email_domain", title: "Verify sending domain", kind: "write",
-        description: "Check a sending domain's DNS records again.",
+        description: "Check a sending domain's DNS records again now. Pending domains are also re-checked automatically every 30 minutes for 3 days.",
         input: { projectId, domainId: z.string() },
         run: (a, api) => api.email("POST", `/domains/${a.domainId}/verify`, { project: a.projectId }),
     }),
@@ -170,7 +170,7 @@ export const emailTools = [
     // ---- sending domains ----
     defineTool({
         name: "get_email_domain", title: "Get sending domain", kind: "read",
-        description: "One sending domain: verification status and the DNS records to add.",
+        description: "One sending domain: verification status and the DNS records to add. ownershipVerified is true once the ownership TXT is confirmed; status turns verified only when DKIM passes too. When the domain is registered at Helipod, add_domain_email_records adds the records in one call.",
         input: { projectId, domainId: z.string() },
         run: (a, api) => api.email("GET", `/domains/${a.domainId}`, { project: a.projectId }),
     }),
