@@ -62,6 +62,27 @@ export class HelipodClient {
         return this.request<T>(this.emailApiUrl, key, method, path, { ...opts, headers });
     }
 
+    /**
+     * A generated image by its signed link, for showing it inline: https links on helipod.io only (they come from our
+     * own API), at most maxBytes. null when it is not an image, too big or unreachable: the caller then gives the link.
+     */
+    async image(link: string, maxBytes: number): Promise<{ data: string; mimeType: string } | null> {
+        let url: URL;
+        try { url = new URL(link); } catch { return null; }
+        if (url.protocol !== "https:" || !(url.hostname === "helipod.io" || url.hostname.endsWith(".helipod.io"))) return null;
+        try {
+            const res = await this.f(url, { headers: { "user-agent": this.cfg.userAgent ?? "helipod-mcp" }, signal: AbortSignal.timeout(20_000) });
+            const mimeType = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+            if (!res.ok || !/^image\/(png|jpeg|webp|gif)$/.test(mimeType)) return null;
+            if (Number(res.headers.get("content-length") ?? 0) > maxBytes) return null;
+            const buf = new Uint8Array(await res.arrayBuffer());
+            if (buf.byteLength > maxBytes) return null;
+            let bin = "";
+            for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+            return { data: btoa(bin), mimeType };
+        } catch { return null; }
+    }
+
     private async request<T>(base: string, key: string | undefined, method: string, path: string, opts: { query?: Query; body?: unknown; idempotencyKey?: string; headers?: Record<string, string> }): Promise<T> {
         const raw = path.startsWith("/") ? path : `/${path}`;
         // An id with "/", "..", "?" or "#" in it (from a model or a crafted document) would turn one tool's request

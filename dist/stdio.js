@@ -34873,6 +34873,33 @@ class HelipodClient {
     const headers = !this.cfg.emailApiKey && opts.project ? { "x-helipod-project": opts.project } : undefined;
     return this.request(this.emailApiUrl, key, method, path, { ...opts, headers });
   }
+  async image(link, maxBytes) {
+    let url2;
+    try {
+      url2 = new URL(link);
+    } catch {
+      return null;
+    }
+    if (url2.protocol !== "https:" || !(url2.hostname === "helipod.io" || url2.hostname.endsWith(".helipod.io")))
+      return null;
+    try {
+      const res = await this.f(url2, { headers: { "user-agent": this.cfg.userAgent ?? "helipod-mcp" }, signal: AbortSignal.timeout(20000) });
+      const mimeType = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+      if (!res.ok || !/^image\/(png|jpeg|webp|gif)$/.test(mimeType))
+        return null;
+      if (Number(res.headers.get("content-length") ?? 0) > maxBytes)
+        return null;
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (buf.byteLength > maxBytes)
+        return null;
+      let bin = "";
+      for (let i = 0;i < buf.length; i += 32768)
+        bin += String.fromCharCode(...buf.subarray(i, i + 32768));
+      return { data: btoa(bin), mimeType };
+    } catch {
+      return null;
+    }
+  }
   async request(base, key, method, path, opts) {
     const raw = path.startsWith("/") ? path : `/${path}`;
     if (/(^|\/)\.\.?(\/|$)|[?#\\]|\/\/|%2e|%2f|%5c/i.test(raw)) {
@@ -34932,7 +34959,8 @@ function register(server, api2, defs) {
     }, async (args) => {
       try {
         const data = await d.run(args, api2);
-        return { content: [{ type: "text", text: data === undefined ? "OK" : JSON.stringify(data, null, 2) }] };
+        const extra = d.present ? await d.present(data, api2, args).catch(() => []) : [];
+        return { content: [{ type: "text", text: data === undefined ? "OK" : JSON.stringify(data, null, 2) }, ...extra] };
       } catch (e) {
         const err = e instanceof HelipodError ? e : new HelipodError(0, "CLIENT_ERROR", String(e?.message ?? e));
         return {
@@ -37212,12 +37240,34 @@ var keyId = exports_external.string().uuid().optional().describe("Limit to one A
 var model = exports_external.string().max(100).optional().describe("Limit to one model id");
 var dryRun5 = exports_external.boolean().optional().describe("true = only check and show the result; nothing is charged or changed");
 var ACCOUNT_KEY2 = "Needs a whole-account key (a key limited to one project gets 403 ACCOUNT_KEY_REQUIRED).";
+var imageProject = exports_external.string().uuid().optional().describe("Project the images belong to (required with a whole-account key; a project key uses its own)");
+var INLINE_MAX_BYTES = 1500000;
+var INLINE_TOTAL_BYTES = 4000000;
+var INLINE_MAX_IMAGES = 4;
+var POLL_MS = 3000;
+var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function showImages(job, api2) {
+  if (job?.status !== "succeeded" || !Array.isArray(job.data))
+    return [];
+  const out = [];
+  let total = 0;
+  for (const [i, img] of job.data.entries()) {
+    const name = `${job.id}-${i + 1}`;
+    const inline = out.filter((x) => x.type === "image").length < INLINE_MAX_IMAGES ? await api2.image(img.url, Math.min(INLINE_MAX_BYTES, INLINE_TOTAL_BYTES - total)) : null;
+    if (inline) {
+      total += Math.ceil(inline.data.length * 3 / 4);
+      out.push({ type: "image", ...inline });
+    }
+    out.push({ type: "resource_link", uri: img.url, name, description: `Generated image ${i + 1} (link valid until the image is deleted, ${job.expires_at ? new Date(job.expires_at * 1000).toISOString().slice(0, 10) : "in 7 days"})` });
+  }
+  return out;
+}
 var aiTools = [
   defineTool({
     name: "list_ai_models",
     title: "List AI models and prices",
     kind: "read",
-    description: "Models available through the Helipod AI Gateway with the price this account pays (IDR per 1M input / cached / output tokens) and any promos running.",
+    description: "Models available through the Helipod AI Gateway with the price this account pays (IDR per 1M input / cached / output tokens) and any promos running. imageModels lists the image models (generate_ai_image) with their sizes and price per image.",
     input: {},
     run: (_a3, api2) => api2.api("GET", "/ai/models")
   }),
@@ -37260,6 +37310,60 @@ var aiTools = [
     description: "Revoke an AI key permanently: every app using it stops working at once and it cannot be restored (a new key must be made in the dashboard and deployed).",
     input: { keyId: exports_external.string().uuid().describe("AI key id from list_ai_keys") },
     run: (a, api2) => api2.api("DELETE", `/ai/keys/${a.keyId}`)
+  }),
+  defineTool({
+    name: "generate_ai_image",
+    title: "Generate images",
+    kind: "write",
+    description: "Generate images with a Helipod AI Gateway image model (list_ai_models shows them under imageModels, with sizes and the price per image). COSTS MONEY from the AI balance: call with dryRun=true first to get the price, tell the user, and wait for a yes. The real call waits up to `wait` seconds (default 50) and returns the images (shown inline when small, plus links); if it is still running it returns the id: call get_ai_image. Images are kept 7 days, then deleted: tell the user to download the ones they keep. Failed images are not charged.",
+    input: {
+      model: exports_external.string().min(1).max(100).describe("Image model code from list_ai_models imageModels"),
+      prompt: exports_external.string().min(1).max(4000),
+      size: exports_external.string().max(20).optional().describe("One of the model's sizes, e.g. 1024x1024 (default: the model's default size)"),
+      n: exports_external.number().int().min(1).max(10).optional().describe("Images in this request (up to the model's maxN; default 1)"),
+      images: exports_external.array(exports_external.string().url().startsWith("https://")).max(10).optional().describe("Reference images as https:// links (only models with refImages > 0)"),
+      projectId: imageProject,
+      dryRun: dryRun5,
+      wait: exports_external.number().int().min(0).max(55).optional().describe("Seconds to wait for the result (default 50; 0 = return the id at once)"),
+      idempotencyKey: exports_external.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real request. Generated when omitted; pass the same value when retrying so it is never charged twice")
+    },
+    run: async (a, api2) => {
+      const body = { model: a.model, prompt: a.prompt, size: a.size, n: a.n, images: a.images, projectId: a.projectId };
+      if (a.dryRun)
+        return api2.api("POST", "/ai/images", { body, query: { dryRun: "true" } });
+      const started = await api2.api("POST", "/ai/images", { body, idempotencyKey: purchaseKey(false, a.idempotencyKey) });
+      const deadline = Date.now() + (a.wait ?? 50) * 1000;
+      let job = { ...started };
+      while (job.status === "processing" && Date.now() + POLL_MS < deadline) {
+        await sleep(POLL_MS);
+        job = await api2.api("GET", `/ai/images/${started.id}`);
+      }
+      if (job.status === "processing")
+        return { ...started, next: `Still generating: call get_ai_image with id ${started.id} in a few seconds.` };
+      return job;
+    },
+    present: (data, api2, a) => a.dryRun ? Promise.resolve([]) : showImages(data, api2)
+  }),
+  defineTool({
+    name: "get_ai_image",
+    title: "Get an image request",
+    kind: "read",
+    description: "One image request by id (from generate_ai_image): status (processing / succeeded / failed), the images (shown inline when small, plus fresh links), the date they are deleted, or the error.",
+    input: { id: exports_external.string().regex(/^req_[0-9a-f-]{36}$/).describe("Request id, req_…") },
+    run: (a, api2) => api2.api("GET", `/ai/images/${a.id}`),
+    present: (data, api2) => showImages(data, api2)
+  }),
+  defineTool({
+    name: "list_ai_images",
+    title: "List generated images",
+    kind: "read",
+    description: "Image requests of a project from the last 7 days (older ones are deleted), newest first: id, model, prompt, size, status, fresh links. Page with `before` (the last id of the previous page).",
+    input: {
+      projectId: imageProject,
+      limit: exports_external.number().int().min(1).max(50).optional(),
+      before: exports_external.string().regex(/^req_[0-9a-f-]{36}$/).optional().describe("last_id of the previous page")
+    },
+    run: (a, api2) => api2.api("GET", "/ai/images", { query: { projectId: a.projectId, limit: a.limit, before: a.before } })
   }),
   defineTool({
     name: "topup_ai_balance",
@@ -37328,15 +37432,16 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.7";
+var VERSION = "0.5.8";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
-- Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups) cover the AI gateway.
-- Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
+- Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
+- Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
 - Destructive tools (delete, terminate, reinstall, rollback, restore a backup or an import, copy a backup onto another VPS, replace DNS, revoke a key, remove an SSH key or port forward, send a broadcast, execute_database_sql): confirm with the user and name what will be lost. Before execute_database_sql, run classify_database_sql.
 - Email: when a project has no email yet (email_status shows activated false) or its plan ended, start it with buy_email_plan (dryRun first; the FREE plan costs nothing, still confirm). That also sets email up for the project; then add and verify a sending domain.
 - Before replacing all DNS records (set_dns_records), read list_dns_records and keep every record the user still needs. Before sending or scheduling a broadcast, tell the user how many contacts it reaches. Before deleting or replacing code, files or variables, read the current value. After renaming a service, fix the variable references listed in warnings.
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
 - Migrate (free): create_vps_import returns a one-time command for the USER to run as root on their old server (never run it yourself); before the first restore_vps_import, show fetchedIp and ask the user to confirm it is their server.
+- Images from generate_ai_image are deleted after 7 days: tell the user and have them download the ones they keep.
 - Deploys and VPS actions run in the background: poll get_deployment / get_vps until they settle; on a failed deploy read get_deployment_logs.
 - Never print secrets (passwords, secret variable values, secret files) unless the user asks for them. Domain owner details are personal data: use only what the user gave.
 - Errors come back as { status, code, error }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys; wallet, invoices, tickets and AI money need a whole-account key: with a sign-in, reconnect and choose Whole account), 402 means plan limit or low balance.

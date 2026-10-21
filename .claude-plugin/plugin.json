@@ -1,6 +1,6 @@
 {
   "name": "helipod",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "Deploy apps, run VPS servers, managed Postgres, domains, email and the AI gateway on Helipod from Claude.",
   "author": {
     "name": "Helipod",

@@ -17,7 +17,14 @@ export interface ToolDef<S extends ZodRawShape> {
     idempotent?: boolean;
     input: S;
     run: (args: z.infer<z.ZodObject<S>>, api: HelipodClient) => Promise<unknown>;
+    /** More content after the JSON (e.g. the generated images themselves). */
+    present?: (data: any, api: HelipodClient, args: z.infer<z.ZodObject<S>>) => Promise<Extra[]>;
 }
+
+/** Content a tool may add after its JSON (MCP image content and resource links). */
+export type Extra =
+    | { type: "image"; data: string; mimeType: string }
+    | { type: "resource_link"; uri: string; name: string; mimeType?: string; description?: string };
 
 export function defineTool<S extends ZodRawShape>(def: ToolDef<S>) { return def; }
 
@@ -39,7 +46,8 @@ export function register(server: McpServer, api: HelipodClient, defs: ToolDef<an
         }, async (args: any) => {
             try {
                 const data = await d.run(args, api);
-                return { content: [{ type: "text" as const, text: data === undefined ? "OK" : JSON.stringify(data, null, 2) }] };
+                const extra = d.present ? await d.present(data, api, args).catch(() => []) : [];
+                return { content: [{ type: "text" as const, text: data === undefined ? "OK" : JSON.stringify(data, null, 2) }, ...extra] };
             } catch (e) {
                 const err = e instanceof HelipodError ? e : new HelipodError(0, "CLIENT_ERROR", String((e as any)?.message ?? e));
                 return {

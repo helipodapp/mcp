@@ -49,6 +49,7 @@ const img = await ai.images.generate({ model: "seedream-image-v5.0-flash", promp
 - Image models are NOT in `/v1/models`; they are listed with sizes and prices at https://docs.helipod.io/docs/ai-gateway/images (cheapest: `seedream-image-v5.0-flash`, about Rp 320 per image).
 - **Images are kept for 7 days, then deleted with their links** (`expires_at` in every answer). When an app needs images longer, download them right away and store them in the app's own storage; never save only the returned URL. Tell the user this when you build it.
 - The request waits up to ~80 s; otherwise it answers `202` with an `id`: poll `GET /v1/images/generations/{id}` until `status` is `succeeded` or `failed`. Failed images are not charged.
+- To make an image for the user right now (not in their code), use the MCP tools instead: `generate_ai_image` (dryRun=true first for the price, then the real call; it returns the images and their links), `get_ai_image`, `list_ai_images`. They bill the AI balance the same way.
 
 ## Practical rules
 
