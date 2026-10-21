@@ -1,6 +1,6 @@
 ---
 name: helipod-ai-gateway
-description: Add AI features to an application using the Helipod AI Gateway (ai.helipod.io) - OpenAI and Anthropic compatible endpoints, one key for many models, billed per token in Rupiah. Use when the user wants to call LLMs from their code through Helipod or switch an OpenAI/Anthropic integration to Helipod.
+description: Add AI features to an application using the Helipod AI Gateway (ai.helipod.io) - OpenAI and Anthropic compatible endpoints plus image generation, one key for many models, billed per token in Rupiah. Use when the user wants to call LLMs from their code through Helipod or switch an OpenAI/Anthropic integration to Helipod.
 ---
 
 # Helipod AI Gateway
@@ -37,6 +37,18 @@ ai = OpenAI(base_url="https://ai.helipod.io/v1", api_key=os.environ["HELIPOD_AI_
 - Read the live list: `GET https://ai.helipod.io/v1/models` (with the key). Model ids change; don't hard-code more than needed, make the model configurable (an env var).
 - Prices per 1M tokens (input / output / cached) are on https://helipod.io/ai-gateway. Some models cost more at peak hours (Mon to Fri 08:00 to 11:00 and 13:00 to 17:00 WIB).
 - Small/fast for classification and chat; larger models for reasoning and code.
+
+## Images
+
+`POST https://ai.helipod.io/v1/images/generations` (OpenAI images format, same key): `{ model, prompt, size?, n?, images?: [https urls], response_format?: "url"|"b64_json", async?: true }`.
+
+```ts
+const img = await ai.images.generate({ model: "seedream-image-v5.0-flash", prompt: "A wooden boat at sunrise, watercolor" });
+```
+
+- Image models are NOT in `/v1/models`; they are listed with sizes and prices at https://docs.helipod.io/docs/ai-gateway/images (cheapest: `seedream-image-v5.0-flash`, about Rp 320 per image).
+- **Images are kept for 7 days, then deleted with their links** (`expires_at` in every answer). When an app needs images longer, download them right away and store them in the app's own storage; never save only the returned URL. Tell the user this when you build it.
+- The request waits up to ~80 s; otherwise it answers `202` with an `id`: poll `GET /v1/images/generations/{id}` until `status` is `succeeded` or `failed`. Failed images are not charged.
 
 ## Practical rules
 
