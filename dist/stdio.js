@@ -35471,6 +35471,7 @@ var password = exports_external.string().min(12).max(30).describe("12-30 charact
 var period = exports_external.enum(["monthly", "3month", "6month", "yearly"]);
 var pointId = exports_external.string().describe("Restore point id (from list_vps_restore_points)");
 var backupPath = exports_external.string().max(1024).describe("Absolute path inside the backup, e.g. /etc/nginx or /var/www/index.html");
+var migrationId = exports_external.string().describe("Migration id (from list_vps_migrations)");
 var vpsTools = [
   defineTool({
     name: "list_vps_plans",
@@ -35850,6 +35851,84 @@ var vpsTools = [
     description: "Status of a prepared backup download; when ready, a short-lived url for the user to open (it expires at expiresAt). The link is for the user to download in a browser.",
     input: { vpsId, downloadId: exports_external.string() },
     run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/backup/downloads/${a.downloadId}`)
+  }),
+  defineTool({
+    name: "list_vps_migrations",
+    title: "List VPS migrations",
+    kind: "read",
+    description: "Migrations onto this VPS, newest first: imports from servers outside Helipod (kind=import) and copies from another VPS's restore point (kind=copy). Each has status (waiting, uploading, inspecting, uploaded, awaiting_command, restoring, restored, failed, expired, cancelled), the uploaded server's OS and size, who ran the command (fetchedIp), progress and pause state of a running job, and the result.",
+    input: { vpsId },
+    run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/migrations`)
+  }),
+  defineTool({
+    name: "get_vps_migration",
+    title: "Get a VPS migration",
+    kind: "read",
+    description: "One migration onto this VPS (see list_vps_migrations). While an upload or restore runs, result.progress has percent (of data read), bytesDone/bytesTotal, sentBytes and sendRate; result.stored the bytes confirmed in storage; result.control the pause state (want vs the job's reported state). Poll it every 15-30 s while it runs.",
+    input: { vpsId, migrationId },
+    run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/migrations/${a.migrationId}`)
+  }),
+  defineTool({
+    name: "create_vps_import",
+    title: "Start a server import (Migrate to Helipod)",
+    kind: "write",
+    description: "Start moving a server from OUTSIDE Helipod (any Linux server with root) onto this running VPS. Free; one import per VPS, at most 3 per account, kept 7 days, the upload is capped at this VPS's disk. Returns a one-time command (curl ... | sudo bash) that works ONCE and expires in 1 hour: give it to the user to run as root on the OLD server; never run it yourself and do not store it. Pass sourceIp (the old server's public IP, e.g. from curl -4 ifconfig.me there) so the command only works from that server; recommended. Then follow it with get_vps_migration: waiting → uploading → inspecting → uploaded.",
+    input: { vpsId, sourceIp: exports_external.string().max(64).optional().describe("The old server's public IP: the command then only works from it (recommended)") },
+    run: ({ vpsId: id2, sourceIp }, api2) => api2.api("POST", `/vps/${id2}/migrations/import`, { body: { sourceIp: sourceIp ?? null } })
+  }),
+  defineTool({
+    name: "new_vps_migration_command",
+    title: "Get a new migration command",
+    kind: "write",
+    description: "A fresh one-time command for an import (status waiting, uploading or failed before an upload finished) or for a restore that waits for its command (awaiting_command). The previous command stops working, and a job still running with it is told to stop. Shown once: give it to the user to run as root on the right server.",
+    input: { vpsId, migrationId },
+    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/migrations/${a.migrationId}/command`)
+  }),
+  defineTool({
+    name: "restore_vps_import",
+    title: "Restore an import onto the VPS",
+    kind: "destructive",
+    description: "Restore an uploaded import (status uploaded, restored, or failed after an upload) onto its VPS. mode=files restores 1-50 paths (e.g. /home, /var/www, /etc/nginx, /var/backups/helipod-db for database dumps): target=folder (default) into /root/restore-<date>, target=inplace OVERWRITES files at the same paths. mode=full turns the whole VPS into a copy of the old server: EVERYTHING on the VPS is replaced, only allowed when the VPS runs the same OS as the upload (sourceOs) and is of the full-VM kind. The first restore needs confirmSource=true: before setting it, show the user fetchedIp (and the uploaded server's hostname) from get_vps_migration and ask whether that is their old server; if not, delete the import instead. Runs in the background: follow it with get_vps_migration.",
+    input: {
+      vpsId,
+      migrationId,
+      mode: exports_external.enum(["files", "full"]),
+      paths: exports_external.array(backupPath).min(1).max(50).optional().describe("mode=files: files or folders to restore"),
+      target: exports_external.enum(["folder", "inplace"]).optional().describe("mode=files: folder (default, safe) or inplace (overwrite)"),
+      confirmSource: exports_external.boolean().optional().describe("true only after the user confirmed fetchedIp is their old server (needed once)")
+    },
+    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/migrations/${a.migrationId}/restore`, { body: { mode: a.mode, paths: a.paths, target: a.target, confirmSource: a.confirmSource } })
+  }),
+  defineTool({
+    name: "control_vps_migration",
+    title: "Pause, resume or stop a migration job",
+    kind: "write",
+    description: "Pause, resume or stop an upload or restore that runs from a one-time command on a server (it must have checked in: result.control is set). The job follows within about 5 seconds; result.control.state shows when it did. Stop is final: the job ends as failed (stopped); a new command (new_vps_migration_command) starts the upload again and reuses what was already uploaded where possible. The user can do the same on that server with sudo helipod-migrate pause | resume | stop.",
+    input: { vpsId, migrationId, action: exports_external.enum(["pause", "resume", "stop"]) },
+    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/migrations/${a.migrationId}/control`, { body: { action: a.action } })
+  }),
+  defineTool({
+    name: "delete_vps_migration",
+    title: "Delete a VPS migration",
+    kind: "destructive",
+    description: "Delete a migration; an import's uploaded files are deleted from storage and cannot be restored any more. A running upload is told to stop. Not while a restore or the upload check runs.",
+    input: { vpsId, migrationId },
+    run: (a, api2) => api2.api("DELETE", `/vps/${a.vpsId}/migrations/${a.migrationId}`)
+  }),
+  defineTool({
+    name: "copy_vps_backup",
+    title: "Copy a restore point to another VPS",
+    kind: "destructive",
+    description: "Copy a restore point of one VPS (vpsId, pointId from list_vps_restore_points) onto ANOTHER VPS of the same account (targetVpsId; to bring the same VPS back use restore_vps_backup). Free. mode=files copies 1-50 paths onto any running VPS: target=folder (default) into /root/restore-<date>, target=inplace OVERWRITES files at the same paths. mode=full turns the target into a full copy: everything on it is replaced; only between two VPS of the same kind running the same OS and version. Runs in the background: follow it with list_vps_migrations on the TARGET VPS. If the result has a command, the target's management agent was unreachable: give the user that one-time command to run as root on the target.",
+    input: {
+      vpsId,
+      pointId,
+      targetVpsId: exports_external.string().describe("The VPS to copy onto (id from list_vps), not vpsId"),
+      mode: exports_external.enum(["files", "full"]),
+      paths: exports_external.array(backupPath).min(1).max(50).optional().describe("mode=files: files or folders to copy"),
+      target: exports_external.enum(["folder", "inplace"]).optional().describe("mode=files: folder (default, safe) or inplace (overwrite)")
+    },
+    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/backup/points/${a.pointId}/copy`, { body: { targetVpsId: a.targetVpsId, mode: a.mode, paths: a.paths, target: a.target } })
   })
 ];
 
@@ -35859,9 +35938,9 @@ var hostId = exports_external.number().int().positive().describe("Child nameserv
 var dryRun2 = exports_external.boolean().optional().describe("true = return the exact price (IDR, VAT included) and the wallet balance after it; nothing is charged or registered");
 var DRY = "dryRun=true returns the price and walletBalanceAfter without charging or changing anything.";
 var record3 = exports_external.object({
-  name: exports_external.string().describe('"@" for the domain itself, or a label like "www"'),
+  name: exports_external.string().describe('"@" for the domain itself, or the part before the domain, e.g. "www" or "_dmarc.mail". A full name like "www.example.com" is accepted and stored as "www"'),
   type: exports_external.enum(["A", "AAAA", "MX", "MXE", "CNAME", "SPF", "TXT"]),
-  content: exports_external.string(),
+  content: exports_external.string().describe('TXT without surrounding quotes (they are added by the DNS server); MX as "10 mail.example.com"'),
   ttl: exports_external.number().int().optional()
 });
 var domainTools = [
@@ -35962,7 +36041,7 @@ var domainTools = [
     name: "list_dns_records",
     title: "List DNS records",
     kind: "read",
-    description: "DNS records of a registered domain.",
+    description: 'DNS records of a registered domain. prefix is the name relative to the domain ("@" for the domain itself); TXT content is shown with the quotes the DNS server adds. A domain with no records is not served at all (its nameservers answer REFUSED), so add at least one record for it to resolve.',
     input: { domainId },
     run: (a, api2) => api2.api("GET", `/domains/${a.domainId}/dns`)
   }),
@@ -35970,7 +36049,7 @@ var domainTools = [
     name: "set_dns_records",
     title: "Replace DNS records",
     kind: "destructive",
-    description: "Replace ALL DNS records of the domain with this list. Records not included are deleted (list_dns_records returns the current ones).",
+    description: "Replace ALL DNS records of the domain with this list. Records not included are deleted: read list_dns_records first and send every record that should stay (prefix as name, content as listed; quotes around TXT are removed for you).",
     input: { domainId, records: exports_external.array(record3).min(1) },
     run: (a, api2) => api2.api("POST", `/domains/${a.domainId}/dns`, { body: { records: a.records } })
   }),
@@ -36023,6 +36102,22 @@ var domainTools = [
     description: "Set one DNS record (by name and type) to new content, leaving the other records as they are. Changes one record and leaves the others as they are (list_dns_records returns record ids).",
     input: { domainId, ...record3.shape },
     run: (a, api2) => api2.api("PUT", `/domains/${a.domainId}/dns`, { body: { name: a.name, type: a.type, content: a.content, ttl: a.ttl } })
+  }),
+  defineTool({
+    name: "list_domain_email_records",
+    title: "Email records for a domain",
+    kind: "read",
+    description: "Helipod Email sending domains inside this registered domain (e.g. mail.example.com), each DNS record they need and whether the domain has it: present, missing, or conflict (with what to change).",
+    input: { domainId },
+    run: (a, api2) => api2.api("GET", `/domains/${a.domainId}/email-records`)
+  }),
+  defineTool({
+    name: "add_domain_email_records",
+    title: "Add email records to a domain",
+    kind: "write",
+    description: "Add the DNS records a Helipod Email sending domain still needs to this registered domain (Helipod DNS only), then start its verification. Records that would clash (a CNAME on a name in use, a second SPF) are not changed and are listed in conflicts. emailDomainId comes from list_domain_email_records.",
+    input: { domainId, emailDomainId: exports_external.string().uuid() },
+    run: (a, api2) => api2.api("POST", `/domains/${a.domainId}/email-records`, { body: { emailDomainId: a.emailDomainId } })
   }),
   defineTool({
     name: "list_child_nameservers",
@@ -36249,7 +36344,7 @@ var emailTools = [
     name: "verify_email_domain",
     title: "Verify sending domain",
     kind: "write",
-    description: "Check a sending domain's DNS records again.",
+    description: "Check a sending domain's DNS records again now. Pending domains are also re-checked automatically every 30 minutes for 3 days.",
     input: { projectId, domainId: exports_external.string() },
     run: (a, api2) => api2.email("POST", `/domains/${a.domainId}/verify`, { project: a.projectId })
   }),
@@ -36297,7 +36392,7 @@ var emailTools = [
     name: "get_email_domain",
     title: "Get sending domain",
     kind: "read",
-    description: "One sending domain: verification status and the DNS records to add.",
+    description: "One sending domain: verification status and the DNS records to add. ownershipVerified is true once the ownership TXT is confirmed; status turns verified only when DKIM passes too. When the domain is registered at Helipod, add_domain_email_records adds the records in one call.",
     input: { projectId, domainId: exports_external.string() },
     run: (a, api2) => api2.email("GET", `/domains/${a.domainId}`, { project: a.projectId })
   }),
@@ -37233,14 +37328,15 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.4";
+var VERSION = "0.5.6";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
-- Destructive tools (delete, terminate, reinstall, rollback, restore a backup, replace DNS, revoke a key, remove an SSH key or port forward, send a broadcast, execute_database_sql): confirm with the user and name what will be lost. Before execute_database_sql, run classify_database_sql.
+- Destructive tools (delete, terminate, reinstall, rollback, restore a backup or an import, copy a backup onto another VPS, replace DNS, revoke a key, remove an SSH key or port forward, send a broadcast, execute_database_sql): confirm with the user and name what will be lost. Before execute_database_sql, run classify_database_sql.
 - Email: when a project has no email yet (email_status shows activated false) or its plan ended, start it with buy_email_plan (dryRun first; the FREE plan costs nothing, still confirm). That also sets email up for the project; then add and verify a sending domain.
 - Before replacing all DNS records (set_dns_records), read list_dns_records and keep every record the user still needs. Before sending or scheduling a broadcast, tell the user how many contacts it reaches. Before deleting or replacing code, files or variables, read the current value. After renaming a service, fix the variable references listed in warnings.
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
+- Migrate (free): create_vps_import returns a one-time command for the USER to run as root on their old server (never run it yourself); before the first restore_vps_import, show fetchedIp and ask the user to confirm it is their server.
 - Deploys and VPS actions run in the background: poll get_deployment / get_vps until they settle; on a failed deploy read get_deployment_logs.
 - Never print secrets (passwords, secret variable values, secret files) unless the user asks for them. Domain owner details are personal data: use only what the user gave.
 - Errors come back as { status, code, error }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys; wallet, invoices, tickets and AI money need a whole-account key: with a sign-in, reconnect and choose Whole account), 402 means plan limit or low balance.

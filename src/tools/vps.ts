@@ -1,5 +1,5 @@
 // VPS API tools: plans, servers, power, reinstall, credentials, billing, upgrades, metrics, firewall, port forwarding,
-// SSH keys, snapshots, backups.
+// SSH keys, snapshots, backups, migrate (imports from outside servers, copies between VPS).
 import { z } from "zod";
 import { defineTool } from "../tool.js";
 
@@ -8,6 +8,7 @@ const password = z.string().min(12).max(30).describe("12-30 characters with uppe
 const period = z.enum(["monthly", "3month", "6month", "yearly"]);
 const pointId = z.string().describe("Restore point id (from list_vps_restore_points)");
 const backupPath = z.string().max(1024).describe("Absolute path inside the backup, e.g. /etc/nginx or /var/www/index.html");
+const migrationId = z.string().describe("Migration id (from list_vps_migrations)");
 
 export const vpsTools = [
     defineTool({
@@ -292,5 +293,65 @@ export const vpsTools = [
         description: "Status of a prepared backup download; when ready, a short-lived url for the user to open (it expires at expiresAt). The link is for the user to download in a browser.",
         input: { vpsId, downloadId: z.string() },
         run: (a, api) => api.api("GET", `/vps/${a.vpsId}/backup/downloads/${a.downloadId}`),
+    }),
+
+    // ── Migrate: bring a server from outside Helipod onto a VPS, or copy a restore point onto another VPS (free) ──
+    defineTool({
+        name: "list_vps_migrations", title: "List VPS migrations", kind: "read",
+        description: "Migrations onto this VPS, newest first: imports from servers outside Helipod (kind=import) and copies from another VPS's restore point (kind=copy). Each has status (waiting, uploading, inspecting, uploaded, awaiting_command, restoring, restored, failed, expired, cancelled), the uploaded server's OS and size, who ran the command (fetchedIp), progress and pause state of a running job, and the result.",
+        input: { vpsId },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/migrations`),
+    }),
+    defineTool({
+        name: "get_vps_migration", title: "Get a VPS migration", kind: "read",
+        description: "One migration onto this VPS (see list_vps_migrations). While an upload or restore runs, result.progress has percent (of data read), bytesDone/bytesTotal, sentBytes and sendRate; result.stored the bytes confirmed in storage; result.control the pause state (want vs the job's reported state). Poll it every 15-30 s while it runs.",
+        input: { vpsId, migrationId },
+        run: (a, api) => api.api("GET", `/vps/${a.vpsId}/migrations/${a.migrationId}`),
+    }),
+    defineTool({
+        name: "create_vps_import", title: "Start a server import (Migrate to Helipod)", kind: "write",
+        description: "Start moving a server from OUTSIDE Helipod (any Linux server with root) onto this running VPS. Free; one import per VPS, at most 3 per account, kept 7 days, the upload is capped at this VPS's disk. Returns a one-time command (curl ... | sudo bash) that works ONCE and expires in 1 hour: give it to the user to run as root on the OLD server; never run it yourself and do not store it. Pass sourceIp (the old server's public IP, e.g. from curl -4 ifconfig.me there) so the command only works from that server; recommended. Then follow it with get_vps_migration: waiting → uploading → inspecting → uploaded.",
+        input: { vpsId, sourceIp: z.string().max(64).optional().describe("The old server's public IP: the command then only works from it (recommended)") },
+        run: ({ vpsId: id, sourceIp }, api) => api.api("POST", `/vps/${id}/migrations/import`, { body: { sourceIp: sourceIp ?? null } }),
+    }),
+    defineTool({
+        name: "new_vps_migration_command", title: "Get a new migration command", kind: "write",
+        description: "A fresh one-time command for an import (status waiting, uploading or failed before an upload finished) or for a restore that waits for its command (awaiting_command). The previous command stops working, and a job still running with it is told to stop. Shown once: give it to the user to run as root on the right server.",
+        input: { vpsId, migrationId },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/migrations/${a.migrationId}/command`),
+    }),
+    defineTool({
+        name: "restore_vps_import", title: "Restore an import onto the VPS", kind: "destructive",
+        description: "Restore an uploaded import (status uploaded, restored, or failed after an upload) onto its VPS. mode=files restores 1-50 paths (e.g. /home, /var/www, /etc/nginx, /var/backups/helipod-db for database dumps): target=folder (default) into /root/restore-<date>, target=inplace OVERWRITES files at the same paths. mode=full turns the whole VPS into a copy of the old server: EVERYTHING on the VPS is replaced, only allowed when the VPS runs the same OS as the upload (sourceOs) and is of the full-VM kind. The first restore needs confirmSource=true: before setting it, show the user fetchedIp (and the uploaded server's hostname) from get_vps_migration and ask whether that is their old server; if not, delete the import instead. Runs in the background: follow it with get_vps_migration.",
+        input: {
+            vpsId, migrationId, mode: z.enum(["files", "full"]),
+            paths: z.array(backupPath).min(1).max(50).optional().describe("mode=files: files or folders to restore"),
+            target: z.enum(["folder", "inplace"]).optional().describe("mode=files: folder (default, safe) or inplace (overwrite)"),
+            confirmSource: z.boolean().optional().describe("true only after the user confirmed fetchedIp is their old server (needed once)"),
+        },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/migrations/${a.migrationId}/restore`, { body: { mode: a.mode, paths: a.paths, target: a.target, confirmSource: a.confirmSource } }),
+    }),
+    defineTool({
+        name: "control_vps_migration", title: "Pause, resume or stop a migration job", kind: "write",
+        description: "Pause, resume or stop an upload or restore that runs from a one-time command on a server (it must have checked in: result.control is set). The job follows within about 5 seconds; result.control.state shows when it did. Stop is final: the job ends as failed (stopped); a new command (new_vps_migration_command) starts the upload again and reuses what was already uploaded where possible. The user can do the same on that server with sudo helipod-migrate pause | resume | stop.",
+        input: { vpsId, migrationId, action: z.enum(["pause", "resume", "stop"]) },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/migrations/${a.migrationId}/control`, { body: { action: a.action } }),
+    }),
+    defineTool({
+        name: "delete_vps_migration", title: "Delete a VPS migration", kind: "destructive",
+        description: "Delete a migration; an import's uploaded files are deleted from storage and cannot be restored any more. A running upload is told to stop. Not while a restore or the upload check runs.",
+        input: { vpsId, migrationId },
+        run: (a, api) => api.api("DELETE", `/vps/${a.vpsId}/migrations/${a.migrationId}`),
+    }),
+    defineTool({
+        name: "copy_vps_backup", title: "Copy a restore point to another VPS", kind: "destructive",
+        description: "Copy a restore point of one VPS (vpsId, pointId from list_vps_restore_points) onto ANOTHER VPS of the same account (targetVpsId; to bring the same VPS back use restore_vps_backup). Free. mode=files copies 1-50 paths onto any running VPS: target=folder (default) into /root/restore-<date>, target=inplace OVERWRITES files at the same paths. mode=full turns the target into a full copy: everything on it is replaced; only between two VPS of the same kind running the same OS and version. Runs in the background: follow it with list_vps_migrations on the TARGET VPS. If the result has a command, the target's management agent was unreachable: give the user that one-time command to run as root on the target.",
+        input: {
+            vpsId, pointId, targetVpsId: z.string().describe("The VPS to copy onto (id from list_vps), not vpsId"),
+            mode: z.enum(["files", "full"]),
+            paths: z.array(backupPath).min(1).max(50).optional().describe("mode=files: files or folders to copy"),
+            target: z.enum(["folder", "inplace"]).optional().describe("mode=files: folder (default, safe) or inplace (overwrite)"),
+        },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/backup/points/${a.pointId}/copy`, { body: { targetVpsId: a.targetVpsId, mode: a.mode, paths: a.paths, target: a.target } }),
     }),
 ];
