@@ -18,7 +18,8 @@ export interface HelipodConfig {
 }
 
 export class HelipodError extends Error {
-    constructor(public status: number, public code: string | undefined, message: string) {
+    /** details: what the API added for the agent, e.g. connectUrl for the user when GitHub is not connected. */
+    constructor(public status: number, public code: string | undefined, message: string, public details?: Record<string, unknown>) {
         super(message);
         this.name = "HelipodError";
     }
@@ -109,7 +110,8 @@ export class HelipodClient {
         if (!res.ok || json?.success === false) {
             const retry = res.headers.get("retry-after");
             const msg = json?.error ?? (text.slice(0, 300) || res.statusText);
-            throw new HelipodError(res.status, json?.code, retry ? `${msg} (retry after ${retry}s)` : String(msg));
+            const details = json?.details && typeof json.details === "object" && !Array.isArray(json.details) ? json.details : undefined;
+            throw new HelipodError(res.status, json?.code, retry ? `${msg} (retry after ${retry}s)` : String(msg), details);
         }
         return (json && "data" in json ? json.data : json) as T;
     }

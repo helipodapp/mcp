@@ -98,15 +98,38 @@ export const containerTools = [
         run: (a, api) => api.api("GET", `${C}/services/${a.serviceId}`),
     }),
     defineTool({
+        name: "get_git_connections", title: "Git connections", kind: "read",
+        description: "Whether the user connected GitHub (sign-in + the Helipod GitHub App, with the accounts it is installed on) and GitLab, plus connectUrl: the Helipod page where the user connects them. Check this before deploying from a private repo. Connecting needs the user in a browser: give them connectUrl, never try to connect yourself.",
+        input: {},
+        run: (_a, api) => api.api("GET", `${C}/git/connections`),
+    }),
+    defineTool({
+        name: "list_git_repos", title: "List Git repositories", kind: "read",
+        description: "Repositories the user's connected GitHub App installations (host github, default) or GitLab account (host gitlab) can reach: fullName, url, private, defaultBranch, newest first. Pass one url to create_service as repo. Not connected: 409 with details.connectUrl for the user.",
+        input: {
+            host: z.enum(["github", "gitlab"]).optional().describe("github (default) or gitlab"),
+            installationId: z.number().int().positive().optional().describe("Only this GitHub installation (id from get_git_connections)"),
+            search: z.string().max(200).optional().describe("Filter by part of owner/name"),
+            limit: z.number().int().min(1).max(100).optional().describe("Default 50"),
+            offset: z.number().int().min(0).optional(),
+        },
+        run: (a, api) => api.api("GET", `${C}/git/repos`, {
+            query: {
+                host: a.host, installationId: a.installationId !== undefined ? String(a.installationId) : undefined, search: a.search,
+                limit: a.limit !== undefined ? String(a.limit) : undefined, offset: a.offset !== undefined ? String(a.offset) : undefined,
+            },
+        }),
+    }),
+    defineTool({
         name: "create_service", title: "Create service", kind: "write",
-        description: "Create a service from a container image, a public Git repository or an inline Dockerfile, and (unless deploy=false) start its first deploy. COSTS MONEY once deployed (billed daily from the wallet): call with dryRun=true first, show the dailyCost to the user and get their OK.",
+        description: "Create a service from a container image, a Git repository or an inline Dockerfile, and (unless deploy=false) start its first deploy. Private GitHub / GitLab repos work once connected (get_git_connections, list_git_repos); such services also redeploy on every push. A private repo that is not connected is refused (409 GITHUB_NOT_CONNECTED / GITLAB_NOT_CONNECTED / REPO_NOT_ACCESSIBLE, nothing created): give the user details.connectUrl and retry after they connect. COSTS MONEY once deployed (billed daily from the wallet): call with dryRun=true first, show the dailyCost to the user and get their OK.",
         input: {
             environmentId: id("Environment"),
             name: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,39}$/).describe("Service name (letters, digits, _ -; starts with a letter). Also used in references like ${{name.KEY}}"),
             image: z.string().optional().describe("Container image, e.g. nginx:alpine or ghcr.io/acme/app:1.2"),
             registryUsername: z.string().optional().describe("Private registry user (with registryPassword)"),
             registryPassword: z.string().optional().describe("Private registry password or token"),
-            repo: z.string().optional().describe("Public HTTPS Git repository URL (instead of image)"),
+            repo: z.string().optional().describe("Git repository: https URL or owner/name for GitHub (instead of image). Private repos need a connected GitHub / GitLab (list_git_repos)"),
             branch: z.string().optional().describe("Git branch (default main)"),
             rootDirectory: z.string().optional().describe("Monorepo: folder to build, e.g. apps/web"),
             dockerfile: z.string().optional().describe("Inline Dockerfile content (instead of image/repo)"),

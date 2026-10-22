@@ -34834,10 +34834,12 @@ var EMPTY_COMPLETION_RESULT = {
 class HelipodError extends Error {
   status;
   code;
-  constructor(status, code, message) {
+  details;
+  constructor(status, code, message, details) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
     this.name = "HelipodError";
   }
 }
@@ -34933,7 +34935,8 @@ class HelipodClient {
     if (!res.ok || json2?.success === false) {
       const retry = res.headers.get("retry-after");
       const msg = json2?.error ?? (text.slice(0, 300) || res.statusText);
-      throw new HelipodError(res.status, json2?.code, retry ? `${msg} (retry after ${retry}s)` : String(msg));
+      const details = json2?.details && typeof json2.details === "object" && !Array.isArray(json2.details) ? json2.details : undefined;
+      throw new HelipodError(res.status, json2?.code, retry ? `${msg} (retry after ${retry}s)` : String(msg), details);
     }
     return json2 && "data" in json2 ? json2.data : json2;
   }
@@ -34965,7 +34968,7 @@ function register(server, api2, defs) {
         const err = e instanceof HelipodError ? e : new HelipodError(0, "CLIENT_ERROR", String(e?.message ?? e));
         return {
           isError: true,
-          content: [{ type: "text", text: JSON.stringify({ status: err.status, code: err.code ?? null, error: err.message }, null, 2) }]
+          content: [{ type: "text", text: JSON.stringify({ status: err.status, code: err.code ?? null, error: err.message, ...err.details ? { details: err.details } : {} }, null, 2) }]
         };
       }
     });
@@ -35100,17 +35103,47 @@ var containerTools = [
     run: (a, api2) => api2.api("GET", `${C}/services/${a.serviceId}`)
   }),
   defineTool({
+    name: "get_git_connections",
+    title: "Git connections",
+    kind: "read",
+    description: "Whether the user connected GitHub (sign-in + the Helipod GitHub App, with the accounts it is installed on) and GitLab, plus connectUrl: the Helipod page where the user connects them. Check this before deploying from a private repo. Connecting needs the user in a browser: give them connectUrl, never try to connect yourself.",
+    input: {},
+    run: (_a3, api2) => api2.api("GET", `${C}/git/connections`)
+  }),
+  defineTool({
+    name: "list_git_repos",
+    title: "List Git repositories",
+    kind: "read",
+    description: "Repositories the user's connected GitHub App installations (host github, default) or GitLab account (host gitlab) can reach: fullName, url, private, defaultBranch, newest first. Pass one url to create_service as repo. Not connected: 409 with details.connectUrl for the user.",
+    input: {
+      host: exports_external.enum(["github", "gitlab"]).optional().describe("github (default) or gitlab"),
+      installationId: exports_external.number().int().positive().optional().describe("Only this GitHub installation (id from get_git_connections)"),
+      search: exports_external.string().max(200).optional().describe("Filter by part of owner/name"),
+      limit: exports_external.number().int().min(1).max(100).optional().describe("Default 50"),
+      offset: exports_external.number().int().min(0).optional()
+    },
+    run: (a, api2) => api2.api("GET", `${C}/git/repos`, {
+      query: {
+        host: a.host,
+        installationId: a.installationId !== undefined ? String(a.installationId) : undefined,
+        search: a.search,
+        limit: a.limit !== undefined ? String(a.limit) : undefined,
+        offset: a.offset !== undefined ? String(a.offset) : undefined
+      }
+    })
+  }),
+  defineTool({
     name: "create_service",
     title: "Create service",
     kind: "write",
-    description: "Create a service from a container image, a public Git repository or an inline Dockerfile, and (unless deploy=false) start its first deploy. COSTS MONEY once deployed (billed daily from the wallet): call with dryRun=true first, show the dailyCost to the user and get their OK.",
+    description: "Create a service from a container image, a Git repository or an inline Dockerfile, and (unless deploy=false) start its first deploy. Private GitHub / GitLab repos work once connected (get_git_connections, list_git_repos); such services also redeploy on every push. A private repo that is not connected is refused (409 GITHUB_NOT_CONNECTED / GITLAB_NOT_CONNECTED / REPO_NOT_ACCESSIBLE, nothing created): give the user details.connectUrl and retry after they connect. COSTS MONEY once deployed (billed daily from the wallet): call with dryRun=true first, show the dailyCost to the user and get their OK.",
     input: {
       environmentId: id("Environment"),
       name: exports_external.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,39}$/).describe("Service name (letters, digits, _ -; starts with a letter). Also used in references like ${{name.KEY}}"),
       image: exports_external.string().optional().describe("Container image, e.g. nginx:alpine or ghcr.io/acme/app:1.2"),
       registryUsername: exports_external.string().optional().describe("Private registry user (with registryPassword)"),
       registryPassword: exports_external.string().optional().describe("Private registry password or token"),
-      repo: exports_external.string().optional().describe("Public HTTPS Git repository URL (instead of image)"),
+      repo: exports_external.string().optional().describe("Git repository: https URL or owner/name for GitHub (instead of image). Private repos need a connected GitHub / GitLab (list_git_repos)"),
       branch: exports_external.string().optional().describe("Git branch (default main)"),
       rootDirectory: exports_external.string().optional().describe("Monorepo: folder to build, e.g. apps/web"),
       dockerfile: exports_external.string().optional().describe("Inline Dockerfile content (instead of image/repo)"),
@@ -37432,7 +37465,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.8";
+var VERSION = "0.5.9";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
@@ -37442,9 +37475,10 @@ var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
 - Migrate (free): create_vps_import returns a one-time command for the USER to run as root on their old server (never run it yourself); before the first restore_vps_import, show fetchedIp and ask the user to confirm it is their server.
 - Images from generate_ai_image are deleted after 7 days: tell the user and have them download the ones they keep.
+- Deploying from Git: public repos need nothing. For a private repo check get_git_connections / list_git_repos first; when GitHub or GitLab is not connected (or a call returns 409 GITHUB_NOT_CONNECTED / GITLAB_NOT_CONNECTED / REPO_NOT_ACCESSIBLE), give the user details.connectUrl to open in their browser and try again after they confirm. Never ask for a GitHub token.
 - Deploys and VPS actions run in the background: poll get_deployment / get_vps until they settle; on a failed deploy read get_deployment_logs.
 - Never print secrets (passwords, secret variable values, secret files) unless the user asks for them. Domain owner details are personal data: use only what the user gave.
-- Errors come back as { status, code, error }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys; wallet, invoices, tickets and AI money need a whole-account key: with a sign-in, reconnect and choose Whole account), 402 means plan limit or low balance.
+- Errors come back as { status, code, error, details? }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys; wallet, invoices, tickets and AI money need a whole-account key: with a sign-in, reconnect and choose Whole account), 402 means plan limit or low balance.
 Docs: https://docs.helipod.io`;
 var ALL_TOOLS = [...containerTools, ...databaseTools, ...vpsTools, ...domainTools, ...emailTools, ...accountTools, ...aiTools, ...generalTools];
 function createHelipodServer(config2) {

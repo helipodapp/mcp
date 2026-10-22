@@ -52,7 +52,7 @@ export function register(server: McpServer, api: HelipodClient, defs: ToolDef<an
                 const err = e instanceof HelipodError ? e : new HelipodError(0, "CLIENT_ERROR", String((e as any)?.message ?? e));
                 return {
                     isError: true,
-                    content: [{ type: "text" as const, text: JSON.stringify({ status: err.status, code: err.code ?? null, error: err.message }, null, 2) }],
+                    content: [{ type: "text" as const, text: JSON.stringify({ status: err.status, code: err.code ?? null, error: err.message, ...(err.details ? { details: err.details } : {}) }, null, 2) }],
                 };
             }
         });

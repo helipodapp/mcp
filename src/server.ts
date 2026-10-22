@@ -14,7 +14,7 @@ import { accountTools } from "./tools/account.js";
 import { aiTools } from "./tools/ai.js";
 import { generalTools } from "./tools/general.js";
 
-export const VERSION = "0.5.8";
+export const VERSION = "0.5.9";
 
 export const INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
@@ -25,9 +25,10 @@ export const INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
 - Migrate (free): create_vps_import returns a one-time command for the USER to run as root on their old server (never run it yourself); before the first restore_vps_import, show fetchedIp and ask the user to confirm it is their server.
 - Images from generate_ai_image are deleted after 7 days: tell the user and have them download the ones they keep.
+- Deploying from Git: public repos need nothing. For a private repo check get_git_connections / list_git_repos first; when GitHub or GitLab is not connected (or a call returns 409 GITHUB_NOT_CONNECTED / GITLAB_NOT_CONNECTED / REPO_NOT_ACCESSIBLE), give the user details.connectUrl to open in their browser and try again after they confirm. Never ask for a GitHub token.
 - Deploys and VPS actions run in the background: poll get_deployment / get_vps until they settle; on a failed deploy read get_deployment_logs.
 - Never print secrets (passwords, secret variable values, secret files) unless the user asks for them. Domain owner details are personal data: use only what the user gave.
-- Errors come back as { status, code, error }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys; wallet, invoices, tickets and AI money need a whole-account key: with a sign-in, reconnect and choose Whole account), 402 means plan limit or low balance.
+- Errors come back as { status, code, error, details? }: 401/403 means the key lacks access (keys choose products and projects in Settings → API keys; wallet, invoices, tickets and AI money need a whole-account key: with a sign-in, reconnect and choose Whole account), 402 means plan limit or low balance.
 Docs: https://docs.helipod.io`;
 
 export const ALL_TOOLS = [...containerTools, ...databaseTools, ...vpsTools, ...domainTools, ...emailTools, ...accountTools, ...aiTools, ...generalTools];
