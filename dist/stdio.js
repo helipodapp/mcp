@@ -37156,6 +37156,38 @@ var accountTools = [
     run: (a, api2) => api2.api("GET", "/account/wallet/transactions", { query: { limit: a.limit, offset: a.offset } })
   }),
   defineTool({
+    name: "create_deposit",
+    title: "Create deposit (top-up)",
+    kind: "write",
+    description: `Create a wallet top-up of amount IDR (whole number, 10000-50000000) and its payment link. Nothing is charged: give the user paymentUrl to pay (QRIS or bank virtual account, listed in paymentMethods; the link lasts 3 hours); never try to pay it yourself. Limits: one unpaid deposit at a time (409 DEPOSIT_PENDING: details.deposit is the unpaid one, send its paymentUrl instead), 10 minutes between deposits (429 DEPOSIT_COOLDOWN, details.nextAllowedAt), 10 a day (429 DEPOSIT_DAILY_LIMIT). dryRun=true creates nothing and says whether it would be accepted now. Then follow it with get_deposit. ${ACCOUNT_KEY}`,
+    input: {
+      amount: exports_external.number().int().min(1e4).max(50000000).describe("IDR, whole number"),
+      dryRun: exports_external.boolean().optional().describe("true = only check (methods, whether it would be accepted now); nothing is created"),
+      idempotencyKey: exports_external.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key. Generated when omitted; pass the same value when retrying so only one deposit is created")
+    },
+    run: (a, api2) => api2.api("POST", "/account/deposits", {
+      body: { amount: a.amount },
+      query: { dryRun: a.dryRun ? "true" : undefined },
+      idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey)
+    })
+  }),
+  defineTool({
+    name: "get_deposit",
+    title: "Get deposit",
+    kind: "read",
+    description: `One deposit: status pending (paymentUrl to pay), paid (paidAt; the wallet was credited) or expired (not paid in time). ${ACCOUNT_KEY}`,
+    input: { depositId: uid2("Deposit") },
+    run: (a, api2) => api2.api("GET", `/account/deposits/${a.depositId}`)
+  }),
+  defineTool({
+    name: "list_deposits",
+    title: "List deposits",
+    kind: "read",
+    description: `Deposits (wallet top-ups), newest first, with status and amount. ${ACCOUNT_KEY}`,
+    input: { limit: limit2, offset },
+    run: (a, api2) => api2.api("GET", "/account/deposits", { query: { limit: a.limit, offset: a.offset } })
+  }),
+  defineTool({
     name: "list_invoices",
     title: "List invoices",
     kind: "read",
@@ -37481,7 +37513,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.10";
+var VERSION = "0.5.11";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.

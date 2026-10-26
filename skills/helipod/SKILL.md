@@ -5,7 +5,7 @@ description: Use when the user mentions Helipod (helipod.io) or wants to work wi
 
 # Helipod
 
-Helipod is a cloud platform in Indonesia: containers (deploy apps from Git, images or Dockerfiles), managed Postgres databases, VPS, domain registration and DNS, email sending, and an AI gateway. Everything is billed from a prepaid wallet in Rupiah (IDR).
+Helipod is a cloud platform in Indonesia: containers (deploy apps from Git, images or Dockerfiles), managed Postgres databases, VPS, domain registration and DNS, email sending, and an AI gateway. Everything is billed from a prepaid wallet in Rupiah (IDR). When the wallet is too low, `create_deposit` makes a top-up payment link: give the user its `paymentUrl` to pay (QRIS or bank virtual account) and check it with `get_deposit`; never pay it yourself.
 
 ## Access
 

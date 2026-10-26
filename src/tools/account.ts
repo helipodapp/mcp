@@ -1,7 +1,7 @@
 // Account API tools: wallet and its transactions, invoices, monthly statements, notifications, a project's activity
-// feed and support tickets. Read-only for money: nothing here spends from the wallet.
+// feed, support tickets, and deposits (a wallet top-up payment link). Nothing here spends from the wallet.
 import { z } from "zod";
-import { defineTool } from "../tool.js";
+import { defineTool, purchaseKey } from "../tool.js";
 
 const uid = (what: string) => z.string().uuid().describe(`${what} id`);
 const limit = z.number().int().min(1).max(100).optional();
@@ -20,6 +20,30 @@ export const accountTools = [
         description: `Wallet history, newest first: amount (negative = debit), source, description, date. Page with limit/offset (total is returned). ${ACCOUNT_KEY}`,
         input: { limit, offset },
         run: (a, api) => api.api("GET", "/account/wallet/transactions", { query: { limit: a.limit, offset: a.offset } }),
+    }),
+    defineTool({
+        name: "create_deposit", title: "Create deposit (top-up)", kind: "write",
+        description: `Create a wallet top-up of amount IDR (whole number, 10000-50000000) and its payment link. Nothing is charged: give the user paymentUrl to pay (QRIS or bank virtual account, listed in paymentMethods; the link lasts 3 hours); never try to pay it yourself. Limits: one unpaid deposit at a time (409 DEPOSIT_PENDING: details.deposit is the unpaid one, send its paymentUrl instead), 10 minutes between deposits (429 DEPOSIT_COOLDOWN, details.nextAllowedAt), 10 a day (429 DEPOSIT_DAILY_LIMIT). dryRun=true creates nothing and says whether it would be accepted now. Then follow it with get_deposit. ${ACCOUNT_KEY}`,
+        input: {
+            amount: z.number().int().min(10000).max(50000000).describe("IDR, whole number"),
+            dryRun: z.boolean().optional().describe("true = only check (methods, whether it would be accepted now); nothing is created"),
+            idempotencyKey: z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key. Generated when omitted; pass the same value when retrying so only one deposit is created"),
+        },
+        run: (a, api) => api.api("POST", "/account/deposits", {
+            body: { amount: a.amount }, query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey),
+        }),
+    }),
+    defineTool({
+        name: "get_deposit", title: "Get deposit", kind: "read",
+        description: `One deposit: status pending (paymentUrl to pay), paid (paidAt; the wallet was credited) or expired (not paid in time). ${ACCOUNT_KEY}`,
+        input: { depositId: uid("Deposit") },
+        run: (a, api) => api.api("GET", `/account/deposits/${a.depositId}`),
+    }),
+    defineTool({
+        name: "list_deposits", title: "List deposits", kind: "read",
+        description: `Deposits (wallet top-ups), newest first, with status and amount. ${ACCOUNT_KEY}`,
+        input: { limit, offset },
+        run: (a, api) => api.api("GET", "/account/deposits", { query: { limit: a.limit, offset: a.offset } }),
     }),
     defineTool({
         name: "list_invoices", title: "List invoices", kind: "read",

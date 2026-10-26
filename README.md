@@ -2,7 +2,7 @@
 
 Use [Helipod](https://helipod.io) from AI coding tools: deploy apps and databases, run VPS servers, buy domains and edit DNS, and send email, by asking in plain language.
 
-- **MCP server** (`helipod-mcp`): 235 tools over the Container, Database, VPS, Domain, Email, Account and AI APIs. Works in Claude Code, Codex, Cursor, VS Code, Windsurf, Claude Desktop and any MCP client.
+- **MCP server** (`helipod-mcp`): 238 tools over the Container, Database, VPS, Domain, Email, Account and AI APIs. Works in Claude Code, Codex, Cursor, VS Code, Windsurf, Claude Desktop and any MCP client.
 - **Skills** (`skills/`): step-by-step playbooks so the agent deploys, prices and confirms the way Helipod expects (price first, confirm before deleting, read build logs on failure).
 
 Step-by-step guides for each tool (Claude Code, Codex, Cursor, VS Code, Gemini CLI, opencode, Windsurf, Claude Desktop, Cline and others): **https://docs.helipod.io/docs/helipod/ai-agents**
@@ -196,7 +196,7 @@ Pick your agents when asked (or pass `-a codex cursor gemini-cli opencode -y`). 
 | VPS | plans, create, rename, power, reinstall, password, login details, terminate, renew, upgrade options and upgrade (create, renew and upgrade each with a dry run), auto-renew, metrics, firewall, port forwarding, SSH keys and SSH on/off, snapshots, backups |
 | Domains | search, prices, owner details, register, transfer, renew (each with a dry run), DNS records, nameservers, child nameservers, WHOIS privacy |
 | Email | status, plan (buy, renew, change, inbox add-ons, with dry runs), send, sent log, sending domains, templates, contacts, segments, topics, broadcasts, suppressions, webhooks, inbox |
-| Account | wallet and transactions, invoices, monthly statements, notifications, project activity, support tickets |
+| Account | wallet and transactions, deposits (top-up payment links), invoices, monthly statements, notifications, project activity, support tickets |
 | AI | models and prices, balance, usage, metrics, AI keys (list, revoke), top-up and auto top-up |
 | Other | `helipod_api_get` to read any other documented endpoint (read only) |
 
