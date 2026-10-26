@@ -2,7 +2,7 @@
 
 Use [Helipod](https://helipod.io) from AI coding tools: deploy apps and databases, run VPS servers, buy domains and edit DNS, and send email, by asking in plain language.
 
-- **MCP server** (`helipod-mcp`): 229 tools over the Container, Database, VPS, Domain, Email, Account and AI APIs. Works in Claude Code, Codex, Cursor, VS Code, Windsurf, Claude Desktop and any MCP client.
+- **MCP server** (`helipod-mcp`): 235 tools over the Container, Database, VPS, Domain, Email, Account and AI APIs. Works in Claude Code, Codex, Cursor, VS Code, Windsurf, Claude Desktop and any MCP client.
 - **Skills** (`skills/`): step-by-step playbooks so the agent deploys, prices and confirms the way Helipod expects (price first, confirm before deleting, read build logs on failure).
 
 Step-by-step guides for each tool (Claude Code, Codex, Cursor, VS Code, Gemini CLI, opencode, Windsurf, Claude Desktop, Cline and others): **https://docs.helipod.io/docs/helipod/ai-agents**
@@ -193,7 +193,7 @@ Pick your agents when asked (or pass `-a codex cursor gemini-cli opencode -y`). 
 |---|---|
 | Containers | projects and environments (create, rename, delete), shared project variables, services (create from image, Git or Dockerfile, rename), deploy, deployments and build logs, restart, variables, domains and their ports, scale, volumes (with resize), function code, secret files, logs, metrics, templates, multi-service stacks |
 | Databases | managed Postgres: create, connection string, branches per environment, compute settings, plan upgrades, usage, live stats, credit balance, tables, read-only queries, SQL classification and confirmed writes |
-| VPS | plans, create, rename, power, reinstall, password, login details, terminate, renew, upgrade options and upgrade, auto-renew, metrics, firewall, port forwarding, SSH keys and SSH on/off, snapshots, backups |
+| VPS | plans, create, rename, power, reinstall, password, login details, terminate, renew, upgrade options and upgrade (create, renew and upgrade each with a dry run), auto-renew, metrics, firewall, port forwarding, SSH keys and SSH on/off, snapshots, backups |
 | Domains | search, prices, owner details, register, transfer, renew (each with a dry run), DNS records, nameservers, child nameservers, WHOIS privacy |
 | Email | status, plan (buy, renew, change, inbox add-ons, with dry runs), send, sent log, sending domains, templates, contacts, segments, topics, broadcasts, suppressions, webhooks, inbox |
 | Account | wallet and transactions, invoices, monthly statements, notifications, project activity, support tickets |

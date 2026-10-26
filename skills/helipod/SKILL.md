@@ -19,7 +19,7 @@ Helipod is a cloud platform in Indonesia: containers (deploy apps from Git, imag
 
 ## Rules (always)
 
-1. **Money**: before anything that costs money (create/deploy/scale a service, create/renew/upgrade a VPS, register/renew/transfer a domain, deploy a template), get the price first (`dryRun: true` on container calls, `list_vps_plans` / `get_vps_renewal_options`, `domain_prices`), tell the user the amount in IDR, and wait for a clear yes.
+1. **Money**: before anything that costs money (create/deploy/scale a service, create/renew/upgrade a VPS, register/renew/transfer a domain, deploy a template), get the price first (`dryRun: true` on container, VPS and domain calls; `domain_prices` and `list_vps_plans` to compare), tell the user the amount in IDR, and wait for a clear yes.
 2. **Destructive**: before deleting a service/volume, terminating/reinstalling a VPS, rolling back a snapshot or replacing DNS records, say exactly what will be lost and wait for a clear yes.
 3. **Background work**: deploys and VPS actions are asynchronous. Poll (`get_deployment`, `get_vps`) every few seconds until they settle; on a failed deploy read `get_deployment_logs` and explain the cause.
 4. **Secrets**: never print passwords, API keys or secret variable values unless the user asks. Store app secrets as secret variables, never in code.
