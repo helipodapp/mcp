@@ -1,7 +1,7 @@
 // VPS API tools: plans, servers, power, reinstall, credentials, billing, upgrades, metrics, firewall, port forwarding,
 // SSH keys, snapshots, backups, migrate (imports from outside servers, copies between VPS).
 import { z } from "zod";
-import { defineTool } from "../tool.js";
+import { defineTool, purchaseKey } from "../tool.js";
 
 const vpsId = z.string().describe("VPS id from list_vps (not the name or hostname)");
 const password = z.string().min(12).max(30).describe("12-30 characters with upper and lower case letters, a digit and one of ! @ # $ % ^ *");
@@ -9,6 +9,10 @@ const period = z.enum(["monthly", "3month", "6month", "yearly"]);
 const pointId = z.string().describe("Restore point id (from list_vps_restore_points)");
 const backupPath = z.string().max(1024).describe("Absolute path inside the backup, e.g. /etc/nginx or /var/www/index.html");
 const migrationId = z.string().describe("Migration id (from list_vps_migrations)");
+const dryRun = z.boolean().optional().describe("true = return the price (IDR) and the wallet balance after it; nothing is charged or changed");
+const idempotencyKey = z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real call. Generated when omitted; pass the same value when retrying so it is never charged twice");
+const DRY = "dryRun=true returns the price and walletBalanceAfter without charging or changing anything.";
+const dryQuery = (d?: boolean) => ({ dryRun: d ? "true" : undefined });
 
 export const vpsTools = [
     defineTool({
@@ -31,13 +35,16 @@ export const vpsTools = [
     }),
     defineTool({
         name: "create_vps", title: "Create VPS", kind: "write",
-        description: "Order a server. COSTS MONEY right away (the whole billing period is charged from the wallet; refunded if provisioning fails). Show the plan price from list_vps_plans and get the user's explicit OK first. Provisioning takes a few minutes: poll get_vps.",
+        description: `Order a server. COSTS MONEY right away (the whole billing period is charged from the wallet; refunded if provisioning fails). Call with dryRun=true first, show the price and the wallet after it, and get the user's explicit OK. ${DRY} autoRenew=false creates it with auto-renew off (renew it with renew_vps). Provisioning takes a few minutes: poll get_vps.`,
         input: {
             projectId: z.string().uuid(), planId: z.string(), name: z.string().min(3).max(50),
             osType: z.string().describe("From the plan's osTemplates, e.g. ubuntu"), osVersion: z.string().describe("e.g. 24.04"),
             rootPassword: password, billingPeriod: period.optional().describe("Default monthly"),
+            autoRenew: z.boolean().optional().describe("false = no automatic renewal from the wallet (default true)"),
+            dryRun, idempotencyKey,
         },
-        run: (a, api) => api.api("POST", "/vps", { body: a }),
+        run: ({ dryRun, idempotencyKey, ...body }, api) =>
+            api.api("POST", "/vps", { body, query: dryQuery(dryRun), idempotencyKey: purchaseKey(dryRun, idempotencyKey) }),
     }),
     defineTool({
         name: "vps_power", title: "Start / stop / restart VPS", kind: "destructive",
@@ -77,15 +84,15 @@ export const vpsTools = [
     }),
     defineTool({
         name: "renew_vps", title: "Renew VPS", kind: "write",
-        description: "Extend a server's paid period. COSTS MONEY: show the price from get_vps_renewal_options and get the user's OK.",
-        input: { vpsId, billingPeriod: period },
-        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/renew`, { body: { billingPeriod: a.billingPeriod } }),
+        description: `Extend a server's paid period. COSTS MONEY: call with dryRun=true first, show the price and the wallet after it, and get the user's OK. ${DRY}`,
+        input: { vpsId, billingPeriod: period, dryRun, idempotencyKey },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/renew`, { body: { billingPeriod: a.billingPeriod }, query: dryQuery(a.dryRun), idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey) }),
     }),
     defineTool({
         name: "upgrade_vps", title: "Upgrade VPS plan", kind: "write",
-        description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. planId must be one listed by get_vps_upgrade_options, which also gives the price in IDR; the server restarts during the upgrade. Servers with providerCode 2 only.",
-        input: { vpsId, planId: z.string() },
-        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/upgrade`, { body: { planId: a.planId } }),
+        description: `Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. planId must be one listed by get_vps_upgrade_options. Call with dryRun=true first and get the user's OK. ${DRY} Servers with providerCode 2 only.`,
+        input: { vpsId, planId: z.string(), dryRun, idempotencyKey },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/upgrade`, { body: { planId: a.planId }, query: dryQuery(a.dryRun), idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey) }),
     }),
     defineTool({
         name: "get_vps_upgrade_options", title: "VPS upgrade options", kind: "read",
@@ -106,8 +113,14 @@ export const vpsTools = [
         run: (a, api) => api.api("GET", `/vps/${a.vpsId}/metrics`, { query: { range: a.range } }),
     }),
     defineTool({
+        name: "set_vps_auto_renew", title: "Set VPS auto-renew", kind: "write", idempotent: true,
+        description: "Turn auto-renew on or off (sets the value, safe to repeat). With it off, the server is only renewed by renew_vps and expires otherwise.",
+        input: { vpsId, autoRenew: z.boolean() },
+        run: (a, api) => api.api("POST", `/vps/${a.vpsId}/auto-renew`, { body: { autoRenew: a.autoRenew } }),
+    }),
+    defineTool({
         name: "toggle_vps_auto_renew", title: "Toggle VPS auto-renew", kind: "write",
-        description: "Flip auto-renew on or off; the response gives the new value.",
+        description: "Flip auto-renew to the other value; the response gives the new one. Prefer set_vps_auto_renew to reach a given state.",
         input: { vpsId },
         run: (a, api) => api.api("POST", `/vps/${a.vpsId}/auto-renew-toggle`),
     }),

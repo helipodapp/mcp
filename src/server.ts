@@ -14,7 +14,7 @@ import { accountTools } from "./tools/account.js";
 import { aiTools } from "./tools/ai.js";
 import { generalTools } from "./tools/general.js";
 
-export const VERSION = "0.5.9";
+export const VERSION = "0.5.10";
 
 export const INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.

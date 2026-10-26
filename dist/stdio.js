@@ -35533,6 +35533,10 @@ var period = exports_external.enum(["monthly", "3month", "6month", "yearly"]);
 var pointId = exports_external.string().describe("Restore point id (from list_vps_restore_points)");
 var backupPath = exports_external.string().max(1024).describe("Absolute path inside the backup, e.g. /etc/nginx or /var/www/index.html");
 var migrationId = exports_external.string().describe("Migration id (from list_vps_migrations)");
+var dryRun2 = exports_external.boolean().optional().describe("true = return the price (IDR) and the wallet balance after it; nothing is charged or changed");
+var idempotencyKey = exports_external.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real call. Generated when omitted; pass the same value when retrying so it is never charged twice");
+var DRY = "dryRun=true returns the price and walletBalanceAfter without charging or changing anything.";
+var dryQuery = (d) => ({ dryRun: d ? "true" : undefined });
 var vpsTools = [
   defineTool({
     name: "list_vps_plans",
@@ -35562,7 +35566,7 @@ var vpsTools = [
     name: "create_vps",
     title: "Create VPS",
     kind: "write",
-    description: "Order a server. COSTS MONEY right away (the whole billing period is charged from the wallet; refunded if provisioning fails). Show the plan price from list_vps_plans and get the user's explicit OK first. Provisioning takes a few minutes: poll get_vps.",
+    description: `Order a server. COSTS MONEY right away (the whole billing period is charged from the wallet; refunded if provisioning fails). Call with dryRun=true first, show the price and the wallet after it, and get the user's explicit OK. ${DRY} autoRenew=false creates it with auto-renew off (renew it with renew_vps). Provisioning takes a few minutes: poll get_vps.`,
     input: {
       projectId: exports_external.string().uuid(),
       planId: exports_external.string(),
@@ -35570,9 +35574,12 @@ var vpsTools = [
       osType: exports_external.string().describe("From the plan's osTemplates, e.g. ubuntu"),
       osVersion: exports_external.string().describe("e.g. 24.04"),
       rootPassword: password,
-      billingPeriod: period.optional().describe("Default monthly")
+      billingPeriod: period.optional().describe("Default monthly"),
+      autoRenew: exports_external.boolean().optional().describe("false = no automatic renewal from the wallet (default true)"),
+      dryRun: dryRun2,
+      idempotencyKey
     },
-    run: (a, api2) => api2.api("POST", "/vps", { body: a })
+    run: ({ dryRun: dryRun3, idempotencyKey: idempotencyKey2, ...body }, api2) => api2.api("POST", "/vps", { body, query: dryQuery(dryRun3), idempotencyKey: purchaseKey(dryRun3, idempotencyKey2) })
   }),
   defineTool({
     name: "vps_power",
@@ -35626,17 +35633,17 @@ var vpsTools = [
     name: "renew_vps",
     title: "Renew VPS",
     kind: "write",
-    description: "Extend a server's paid period. COSTS MONEY: show the price from get_vps_renewal_options and get the user's OK.",
-    input: { vpsId, billingPeriod: period },
-    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/renew`, { body: { billingPeriod: a.billingPeriod } })
+    description: `Extend a server's paid period. COSTS MONEY: call with dryRun=true first, show the price and the wallet after it, and get the user's OK. ${DRY}`,
+    input: { vpsId, billingPeriod: period, dryRun: dryRun2, idempotencyKey },
+    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/renew`, { body: { billingPeriod: a.billingPeriod }, query: dryQuery(a.dryRun), idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey) })
   }),
   defineTool({
     name: "upgrade_vps",
     title: "Upgrade VPS plan",
     kind: "write",
-    description: "Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. planId must be one listed by get_vps_upgrade_options, which also gives the price in IDR; the server restarts during the upgrade. Servers with providerCode 2 only.",
-    input: { vpsId, planId: exports_external.string() },
-    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/upgrade`, { body: { planId: a.planId } })
+    description: `Move a server to a larger plan in the same family and region. COSTS MONEY (the difference for the days left) and restarts the server. planId must be one listed by get_vps_upgrade_options. Call with dryRun=true first and get the user's OK. ${DRY} Servers with providerCode 2 only.`,
+    input: { vpsId, planId: exports_external.string(), dryRun: dryRun2, idempotencyKey },
+    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/upgrade`, { body: { planId: a.planId }, query: dryQuery(a.dryRun), idempotencyKey: purchaseKey(a.dryRun, a.idempotencyKey) })
   }),
   defineTool({
     name: "get_vps_upgrade_options",
@@ -35664,10 +35671,19 @@ var vpsTools = [
     run: (a, api2) => api2.api("GET", `/vps/${a.vpsId}/metrics`, { query: { range: a.range } })
   }),
   defineTool({
+    name: "set_vps_auto_renew",
+    title: "Set VPS auto-renew",
+    kind: "write",
+    idempotent: true,
+    description: "Turn auto-renew on or off (sets the value, safe to repeat). With it off, the server is only renewed by renew_vps and expires otherwise.",
+    input: { vpsId, autoRenew: exports_external.boolean() },
+    run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/auto-renew`, { body: { autoRenew: a.autoRenew } })
+  }),
+  defineTool({
     name: "toggle_vps_auto_renew",
     title: "Toggle VPS auto-renew",
     kind: "write",
-    description: "Flip auto-renew on or off; the response gives the new value.",
+    description: "Flip auto-renew to the other value; the response gives the new one. Prefer set_vps_auto_renew to reach a given state.",
     input: { vpsId },
     run: (a, api2) => api2.api("POST", `/vps/${a.vpsId}/auto-renew-toggle`)
   }),
@@ -35996,8 +36012,8 @@ var vpsTools = [
 // src/tools/domains.ts
 var domainId = exports_external.number().int().positive().describe("Domain id (number, from list_my_domains)");
 var hostId = exports_external.number().int().positive().describe("Child nameserver id (from list_child_nameservers)");
-var dryRun2 = exports_external.boolean().optional().describe("true = return the exact price (IDR, VAT included) and the wallet balance after it; nothing is charged or registered");
-var DRY = "dryRun=true returns the price and walletBalanceAfter without charging or changing anything.";
+var dryRun3 = exports_external.boolean().optional().describe("true = return the exact price (IDR, VAT included) and the wallet balance after it; nothing is charged or registered");
+var DRY2 = "dryRun=true returns the price and walletBalanceAfter without charging or changing anything.";
 var record3 = exports_external.object({
   name: exports_external.string().describe('"@" for the domain itself, or the part before the domain, e.g. "www" or "_dmarc.mail". A full name like "www.example.com" is accepted and stored as "www"'),
   type: exports_external.enum(["A", "AAAA", "MX", "MXE", "CNAME", "SPF", "TXT"]),
@@ -36073,12 +36089,12 @@ var domainTools = [
     name: "register_domain",
     title: "Register domain",
     kind: "write",
-    description: `Register a domain for 1 year. COSTS MONEY from the wallet. Check search_domain, and that the owner details are complete (check_registrant / update_registrant). ${DRY} The dry run includes WHOIS privacy when whoisProtection is true.`,
+    description: `Register a domain for 1 year. COSTS MONEY from the wallet. Check search_domain, and that the owner details are complete (check_registrant / update_registrant). ${DRY2} The dry run includes WHOIS privacy when whoisProtection is true.`,
     input: {
       name: exports_external.string().describe("Full domain, e.g. tokosaya.id"),
       nameservers: exports_external.array(exports_external.string()).min(2).max(5).optional(),
       whoisProtection: exports_external.boolean().optional(),
-      dryRun: dryRun2
+      dryRun: dryRun3
     },
     run: (a, api2) => api2.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection }, query: { dryRun: a.dryRun ? "true" : undefined } })
   }),
@@ -36086,16 +36102,16 @@ var domainTools = [
     name: "transfer_domain",
     title: "Transfer domain in",
     kind: "write",
-    description: `Transfer a domain from another registrar (adds 1 year). COSTS MONEY from the wallet. Needs the domain's auth code. ${DRY}`,
-    input: { name: exports_external.string(), authCode: exports_external.string(), nameservers: exports_external.array(exports_external.string()).min(2).max(5).optional(), dryRun: dryRun2 },
+    description: `Transfer a domain from another registrar (adds 1 year). COSTS MONEY from the wallet. Needs the domain's auth code. ${DRY2}`,
+    input: { name: exports_external.string(), authCode: exports_external.string(), nameservers: exports_external.array(exports_external.string()).min(2).max(5).optional(), dryRun: dryRun3 },
     run: (a, api2) => api2.api("POST", "/domains/transfer", { body: { name: a.name, authCode: a.authCode, period: 1, nameservers: a.nameservers }, query: { dryRun: a.dryRun ? "true" : undefined } })
   }),
   defineTool({
     name: "renew_domain",
     title: "Renew domain",
     kind: "write",
-    description: `Renew a domain for 1 year (plus WHOIS privacy when it is on). COSTS MONEY from the wallet. ${DRY}`,
-    input: { domainId, dryRun: dryRun2 },
+    description: `Renew a domain for 1 year (plus WHOIS privacy when it is on). COSTS MONEY from the wallet. ${DRY2}`,
+    input: { domainId, dryRun: dryRun3 },
     run: (a, api2) => api2.api("POST", `/domains/${a.domainId}/renew`, { body: { period: 1 }, query: { dryRun: a.dryRun ? "true" : undefined } })
   }),
   defineTool({
@@ -36258,7 +36274,7 @@ var message = exports_external.object({
   variables: exports_external.record(exports_external.string(), exports_external.string()).optional(),
   idempotencyKey: exports_external.string().max(128).optional()
 });
-var dryRun3 = exports_external.boolean().optional().describe("true = return the price (IDR) and the wallet balance after it; nothing is charged or changed");
+var dryRun4 = exports_external.boolean().optional().describe("true = return the price (IDR) and the wallet balance after it; nothing is charged or changed");
 var idem2 = exports_external.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real purchase. Generated when omitted; pass the same value when retrying so it is never charged twice");
 var MONEY = "COSTS MONEY from the wallet. dryRun=true returns the charge (IDR) and walletBalanceAfter without charging or changing anything.";
 var planCode = exports_external.string().min(1).max(50).describe("Plan code from list_email_plans");
@@ -36294,7 +36310,7 @@ var emailTools = [
     title: "Buy email plan",
     kind: "write",
     description: `Start an email plan for the project (a free plan activates without charge). Works for a project with no email yet: the real call also sets email up (result.setup). ${MONEY} The dry run's mode says purchase, activate_free or already_active.`,
-    input: { projectId, planCode, months: exports_external.union([exports_external.literal(1), exports_external.literal(3), exports_external.literal(6), exports_external.literal(12)]).optional().describe("Billing cycle, default 1"), dryRun: dryRun3, idempotencyKey: idem2 },
+    input: { projectId, planCode, months: exports_external.union([exports_external.literal(1), exports_external.literal(3), exports_external.literal(6), exports_external.literal(12)]).optional().describe("Billing cycle, default 1"), dryRun: dryRun4, idempotencyKey: idem2 },
     run: (a, api2) => api2.email("POST", "/plan", {
       project: a.projectId,
       body: { planCode: a.planCode, months: a.months },
@@ -36307,7 +36323,7 @@ var emailTools = [
     title: "Renew email plan",
     kind: "write",
     description: `Renew the project's ended or expiring email plan (409 PLAN_ACTIVE while one is still running and cannot be extended). Repeats the last plan and cycle unless planCode / months are given. ${MONEY}`,
-    input: { projectId, planCode: planCode.optional(), months: exports_external.union([exports_external.literal(1), exports_external.literal(3), exports_external.literal(6), exports_external.literal(12)]).optional(), dryRun: dryRun3, idempotencyKey: idem2 },
+    input: { projectId, planCode: planCode.optional(), months: exports_external.union([exports_external.literal(1), exports_external.literal(3), exports_external.literal(6), exports_external.literal(12)]).optional(), dryRun: dryRun4, idempotencyKey: idem2 },
     run: (a, api2) => api2.email("POST", "/plan/renew", {
       project: a.projectId,
       body: { planCode: a.planCode, months: a.months },
@@ -36320,7 +36336,7 @@ var emailTools = [
     title: "Change email plan",
     kind: "write",
     description: `Move the active email plan to another plan. An upgrade applies now and charges the prorated difference to the same end date; a downgrade is scheduled for the next cycle (no refund). ${MONEY}`,
-    input: { projectId, planCode, dryRun: dryRun3, idempotencyKey: idem2 },
+    input: { projectId, planCode, dryRun: dryRun4, idempotencyKey: idem2 },
     run: (a, api2) => api2.email("POST", "/plan/change", {
       project: a.projectId,
       body: { planCode: a.planCode },
@@ -36337,7 +36353,7 @@ var emailTools = [
       projectId,
       extraMailboxes: exports_external.number().int().min(0).max(50).describe("Total extra mailboxes wanted (0-50)"),
       extraStorageGb: exports_external.number().int().min(0).max(1000).describe("Total extra inbox storage in GB (0-1000)"),
-      dryRun: dryRun3,
+      dryRun: dryRun4,
       idempotencyKey: idem2
     },
     run: (a, api2) => api2.email("POST", "/plan/addons", {
@@ -36907,7 +36923,7 @@ var emailTools = [
 // src/tools/databases.ts
 var databaseId = exports_external.string().uuid().describe("Database id (from list_databases)");
 var environmentId = exports_external.string().uuid().describe("Environment id (from list_projects). Omit for the primary (production) branch.");
-var dryRun4 = exports_external.boolean().optional().describe("true = only check and show the result or price; nothing changes");
+var dryRun5 = exports_external.boolean().optional().describe("true = only check and show the result or price; nothing changes");
 var databaseTools = [
   defineTool({
     name: "list_database_plans",
@@ -37001,7 +37017,7 @@ var databaseTools = [
       minCu: exports_external.number().min(0.25).max(10).optional(),
       maxCu: exports_external.number().min(0.25).max(10).optional(),
       suspendTimeoutSeconds: exports_external.number().int().min(0).max(604800).optional().describe("0 = never suspend, or 60-604800"),
-      dryRun: dryRun4
+      dryRun: dryRun5
     },
     run: (a, api2) => api2.api("PATCH", `/databases/${a.databaseId}/settings`, {
       body: { minCu: a.minCu, maxCu: a.maxCu, suspendTimeoutSeconds: a.suspendTimeoutSeconds },
@@ -37013,7 +37029,7 @@ var databaseTools = [
     title: "Upgrade database plan / top up",
     kind: "write",
     description: "Buy a paid plan or top up credits. COSTS MONEY from the wallet: call with dryRun first, show price and wallet balance after, and get the user's explicit OK.",
-    input: { databaseId, plan: exports_external.string().describe("Plan code (e.g. STARTER) or id from list_database_plans"), dryRun: dryRun4, idempotencyKey: exports_external.string().max(128).optional() },
+    input: { databaseId, plan: exports_external.string().describe("Plan code (e.g. STARTER) or id from list_database_plans"), dryRun: dryRun5, idempotencyKey: exports_external.string().max(128).optional() },
     run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/upgrade`, { body: { plan: a.plan }, query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: a.idempotencyKey })
   }),
   defineTool({
@@ -37271,7 +37287,7 @@ var accountTools = [
 var projectId2 = exports_external.string().uuid().optional().describe("Limit to one project (a project key is always limited to its own)");
 var keyId = exports_external.string().uuid().optional().describe("Limit to one AI key (id from list_ai_keys)");
 var model = exports_external.string().max(100).optional().describe("Limit to one model id");
-var dryRun5 = exports_external.boolean().optional().describe("true = only check and show the result; nothing is charged or changed");
+var dryRun6 = exports_external.boolean().optional().describe("true = only check and show the result; nothing is charged or changed");
 var ACCOUNT_KEY2 = "Needs a whole-account key (a key limited to one project gets 403 ACCOUNT_KEY_REQUIRED).";
 var imageProject = exports_external.string().uuid().optional().describe("Project the images belong to (required with a whole-account key; a project key uses its own)");
 var INLINE_MAX_BYTES = 1500000;
@@ -37356,7 +37372,7 @@ var aiTools = [
       n: exports_external.number().int().min(1).max(10).optional().describe("Images in this request (up to the model's maxN; default 1)"),
       images: exports_external.array(exports_external.string().url().startsWith("https://")).max(10).optional().describe("Reference images as https:// links (only models with refImages > 0)"),
       projectId: imageProject,
-      dryRun: dryRun5,
+      dryRun: dryRun6,
       wait: exports_external.number().int().min(0).max(55).optional().describe("Seconds to wait for the result (default 50; 0 = return the id at once)"),
       idempotencyKey: exports_external.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real request. Generated when omitted; pass the same value when retrying so it is never charged twice")
     },
@@ -37406,7 +37422,7 @@ var aiTools = [
     input: {
       packId: exports_external.string().min(1).max(64).optional(),
       amount: exports_external.number().min(1).max(1e9).optional().describe("IDR"),
-      dryRun: dryRun5,
+      dryRun: dryRun6,
       idempotencyKey: exports_external.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real top-up. Generated when omitted; pass the same value when retrying so it is never charged twice")
     },
     run: (a, api2) => {
@@ -37429,7 +37445,7 @@ var aiTools = [
       enabled: exports_external.boolean(),
       threshold: exports_external.number().min(1).optional().describe("Top up when the AI balance is below this (IDR)"),
       amount: exports_external.number().min(1).optional().describe("How much to top up each time (IDR)"),
-      dryRun: dryRun5
+      dryRun: dryRun6
     },
     run: (a, api2) => api2.api("PUT", "/ai/auto-topup", {
       body: { enabled: a.enabled, threshold: a.threshold, amount: a.amount },
@@ -37465,7 +37481,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.9";
+var VERSION = "0.5.10";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
