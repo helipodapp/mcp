@@ -17,14 +17,19 @@ export const domainTools = [
     defineTool({
         name: "search_domain", title: "Check domain availability", kind: "read",
         description: "Is a domain name available to register? No key needed.",
-        input: { domain: z.string().describe("e.g. tokosaya.id") },
-        run: (a, api) => api.api("GET", "/domains/search", { query: { domain: a.domain }, auth: false }),
+        input: { domain: z.string().describe("e.g. tokosaya.id"), includePremium: z.boolean().optional().describe("Also check names the registry sells as premium (is_premium_name). Premium names cannot be bought online: the user must contact support") },
+        run: (a, api) => api.api("GET", "/domains/search", { query: { domain: a.domain, includePremium: a.includePremium ? "true" : undefined }, auth: false }),
     }),
     defineTool({
         name: "domain_prices", title: "Domain prices", kind: "read",
         description: "Registration, renewal and transfer prices per extension (IDR, VAT included) and the yearly WHOIS privacy price.",
-        input: { extension: z.string().optional().describe("e.g. .id or .com"), limit: z.number().int().min(1).max(100).optional() },
-        run: (a, api) => api.api("GET", "/domains/prices", { query: { extension: a.extension, limit: a.limit ?? 50 }, auth: false }),
+        input: {
+            extension: z.string().optional().describe("e.g. .id or .com"),
+            promo: z.boolean().optional().describe("true: only extensions on promotion"),
+            limit: z.number().int().min(1).max(100).optional(),
+            page: z.number().int().min(1).optional(),
+        },
+        run: (a, api) => api.api("GET", "/domains/prices", { query: { extension: a.extension, promo: a.promo === undefined ? undefined : String(a.promo), limit: a.limit ?? 50, page: a.page }, auth: false }),
     }),
     defineTool({
         name: "list_my_domains", title: "List my domains", kind: "read",
@@ -71,9 +76,17 @@ export const domainTools = [
             name: z.string().describe("Full domain, e.g. tokosaya.id"),
             nameservers: z.array(z.string()).min(2).max(5).optional(),
             whoisProtection: z.boolean().optional(),
+            registrant: z.object({
+                name: z.string().min(3).max(255), email: z.string().max(255).optional().describe("Gets the registry's verification email; defaults to the account email"),
+                organization: z.string().max(255).optional(), phone: z.string().min(9).max(20).describe("e.g. +6281234567890"),
+                addressLine1: z.string().min(3).max(500), addressLine2: z.string().max(500).optional(),
+                city: z.string().min(3).max(100), state: z.string().min(1).max(100),
+                countryCode: z.string().regex(/^[A-Za-z]{2}$/).describe("ISO 3166-1 alpha-2, e.g. ID"), postalCode: z.string().min(1).max(20),
+                fax: z.string().max(50).optional(),
+            }).optional().describe("Owner of THIS domain instead of the account's owner details (e.g. a reseller's customer). .id domains only: others answer 400 REGISTRANT_NOT_SUPPORTED. Use only details the user gave."),
             dryRun,
         },
-        run: (a, api) => api.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection }, query: { dryRun: a.dryRun ? "true" : undefined } }),
+        run: (a, api) => api.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection, registrant: a.registrant }, query: { dryRun: a.dryRun ? "true" : undefined } }),
     }),
     defineTool({
         name: "transfer_domain", title: "Transfer domain in", kind: "write",
@@ -113,9 +126,9 @@ export const domainTools = [
     }),
     defineTool({
         name: "enable_whois_privacy", title: "Enable WHOIS privacy", kind: "write",
-        description: "Hide the owner's details in WHOIS. COSTS MONEY (the whois_protection price per year).",
-        input: { domainId },
-        run: (a, api) => api.api("POST", `/domains/${a.domainId}/whois-protection`),
+        description: `Hide the owner's details in WHOIS. COSTS MONEY (the whois_protection price per year). ${DRY}`,
+        input: { domainId, dryRun },
+        run: (a, api) => api.api("POST", `/domains/${a.domainId}/whois-protection`, { query: { dryRun: a.dryRun ? "true" : undefined } }),
     }),
     defineTool({
         name: "get_domain_price", title: "Domain price detail", kind: "read",
@@ -146,6 +159,18 @@ export const domainTools = [
         description: "Add the DNS records a Helipod Email sending domain still needs to this registered domain (Helipod DNS only), then start its verification. Records that would clash (a CNAME on a name in use, a second SPF) are not changed and are listed in conflicts. emailDomainId comes from list_domain_email_records.",
         input: { domainId, emailDomainId: z.string().uuid() },
         run: (a, api) => api.api("POST", `/domains/${a.domainId}/email-records`, { body: { emailDomainId: a.emailDomainId } }),
+    }),
+    defineTool({
+        name: "get_child_nameserver", title: "Get child nameserver", kind: "read",
+        description: "One child nameserver (glue record) of a registered domain: hostname and IP address.",
+        input: { domainId, hostId },
+        run: (a, api) => api.api("GET", `/domains/${a.domainId}/hosts/${a.hostId}`),
+    }),
+    defineTool({
+        name: "set_domain_auto_renew", title: "Set domain auto-renew", kind: "write", idempotent: true,
+        description: "Turn automatic renewal of a domain on or off (sets the value given; calling it twice is safe). On: renewed from the wallet before it expires. Off: it expires unless renewed by hand (renew_domain). Nothing is charged now.",
+        input: { domainId, autoRenew: z.boolean() },
+        run: (a, api) => api.api("PATCH", `/domains/${a.domainId}/auto-renew`, { body: { autoRenew: a.autoRenew } }),
     }),
     defineTool({
         name: "list_child_nameservers", title: "List child nameservers", kind: "read",

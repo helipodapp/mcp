@@ -22,6 +22,9 @@ const message = z.object({
     subject: z.string().max(500).optional(), html: z.string().optional(), text: z.string().optional(), replyTo: z.string().optional(),
     templateId: z.string().optional(), templateData: z.record(z.string(), z.string()).optional(),
     variables: z.record(z.string(), z.string()).optional(), idempotencyKey: z.string().max(128).optional(),
+    headers: z.record(z.string(), z.string()).optional().describe("Extra MIME headers (letters, digits, hyphens in names; no line breaks). Not with templateId"),
+    metadata: z.record(z.string(), z.string()).optional().describe("Your own key/value data, stored with the email (get_email returns it)"),
+    sensitive: z.boolean().optional().describe("true when templateData or variables carry a secret (password, one-time code): their values are wiped from the job record after the send"),
 });
 const dryRun = z.boolean().optional().describe("true = return the price (IDR) and the wallet balance after it; nothing is charged or changed");
 const idem = z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real purchase. Generated when omitted; pass the same value when retrying so it is never charged twice");
@@ -103,13 +106,21 @@ export const emailTools = [
             templateId: z.string().optional(), templateData: z.record(z.string(), z.string()).optional(),
             variables: z.record(z.string(), z.string()).optional(),
             idempotencyKey: z.string().max(128).optional(),
+            headers: z.record(z.string(), z.string()).optional().describe("Extra MIME headers (letters, digits, hyphens in names; no line breaks). Not with templateId"),
+            metadata: z.record(z.string(), z.string()).optional().describe("Your own key/value data, stored with the email (get_email returns it)"),
+            sensitive: z.boolean().optional().describe("true when templateData or variables carry a secret (password, one-time code): their values are wiped from the job record after the send"),
         },
         run: ({ projectId: project, ...a }, api) => api.email("POST", "/send", { body: a, project }),
     }),
     defineTool({
         name: "list_emails", title: "List sent emails", kind: "read",
         description: "Email log, newest first, with delivery status.",
-        input: { projectId, status: z.string().optional(), search: z.string().optional(), limit: z.number().int().min(1).max(100).optional(), cursor: z.string().optional() },
+        input: {
+            projectId, status: z.string().optional(), search: z.string().optional(),
+            from: z.string().optional().describe("Sent at or after (ISO 8601), e.g. 2026-10-01T00:00:00Z"),
+            to: z.string().optional().describe("Sent before (ISO 8601)"),
+            limit: z.number().int().min(1).max(100).optional(), cursor: z.string().optional(),
+        },
         run: ({ projectId: project, ...a }, api) => api.email("GET", "/emails", { query: a, project }),
     }),
     defineTool({
@@ -145,7 +156,13 @@ export const emailTools = [
     defineTool({
         name: "add_contact", title: "Add contact", kind: "write",
         description: "Add or update an audience contact.",
-        input: { projectId, email: z.string(), firstName: z.string().optional(), lastName: z.string().optional() },
+        input: {
+            projectId, email: z.string(), firstName: z.string().optional(), lastName: z.string().optional(),
+            status: z.enum(["subscribed", "unsubscribed"]).optional(),
+            properties: z.record(z.string(), z.string()).optional().describe("Custom properties (used by segments and {{placeholders}})"),
+            consentConfirmed: z.boolean().optional().describe("true only when the person agreed to receive email (you have their opt-in)"),
+            consentSource: z.string().max(50).optional().describe("Where the consent came from, e.g. signup_form"),
+        },
         run: ({ projectId: project, ...a }, api) => api.email("POST", "/contacts", { body: a, project }),
     }),
     defineTool({
@@ -487,5 +504,119 @@ export const emailTools = [
         description: "Delete a received message permanently.",
         input: { projectId, messageId: uid("Message") },
         run: (a, api) => api.email("DELETE", `/inbound/messages/${a.messageId}`, { project: a.projectId }),
+    }),
+    defineTool({
+        name: "add_email_contacts", title: "Add contacts (bulk)", kind: "write",
+        description: "Add or update up to 1000 contacts in one call (same fields as add_contact). For a CSV file use import_email_contacts.",
+        input: {
+            projectId,
+            contacts: z.array(z.object({
+                email: z.string(), firstName: z.string().max(100).optional(), lastName: z.string().max(100).optional(),
+                status: z.enum(["subscribed", "unsubscribed"]).optional(), properties: z.record(z.string(), z.string()).optional(),
+            })).min(1).max(1000),
+            consentConfirmed: z.boolean().optional().describe("true only when every one of them opted in"),
+            consentSource: z.string().max(50).optional(),
+        },
+        run: ({ projectId: project, ...body }, api) => api.email("POST", "/contacts", { body, project }),
+    }),
+    defineTool({
+        name: "import_email_contacts", title: "Import contacts from CSV", kind: "write",
+        description: "Import contacts from CSV text (header row with email, optional firstName, lastName and property columns). Runs in the background: the answer has a job id for get_email_job.",
+        input: {
+            projectId, csv: z.string().min(1).max(10_000_000),
+            consentConfirmed: z.boolean().optional().describe("true only when every contact in the file opted in"),
+            consentSource: z.string().max(50).optional(),
+        },
+        run: ({ projectId: project, ...body }, api) => api.email("POST", "/contacts/import", { body, project }),
+    }),
+    defineTool({
+        name: "export_email_contacts", title: "Export contacts (CSV)", kind: "read",
+        description: "Every contact as CSV text (up to 50,000). Contact data is personal: give it only to the user who asked.",
+        input: { projectId },
+        run: (a, api) => api.email("GET", "/contacts/export", { project: a.projectId }),
+    }),
+    defineTool({
+        name: "set_email_contact_properties", title: "Set contact properties", kind: "write", idempotent: true,
+        description: "Set custom properties of a contact. Given keys are overwritten, other keys are kept.",
+        input: { projectId, contactId: uid("Contact"), properties: z.record(z.string(), z.string()) },
+        run: (a, api) => api.email("PUT", `/contacts/${a.contactId}/properties`, { body: { properties: a.properties }, project: a.projectId }),
+    }),
+    defineTool({
+        name: "set_email_contact_topics", title: "Subscribe contact to topics", kind: "write", idempotent: true,
+        description: "Subscribe a contact to the given topics (ids from list_email_topics).",
+        input: { projectId, contactId: uid("Contact"), topicIds: z.array(z.string().uuid()).max(50) },
+        run: (a, api) => api.email("PUT", `/contacts/${a.contactId}/topics`, { body: { topicIds: a.topicIds }, project: a.projectId }),
+    }),
+    defineTool({
+        name: "get_email_segment", title: "Get segment", kind: "read",
+        description: "One segment with its filter and contact count.",
+        input: { projectId, segmentId: uid("Segment") },
+        run: (a, api) => api.email("GET", `/segments/${a.segmentId}`, { project: a.projectId }),
+    }),
+    defineTool({
+        name: "recalculate_email_segment", title: "Recalculate segment", kind: "write",
+        description: "Rebuild a segment's member list now (in the background) after contacts or properties changed.",
+        input: { projectId, segmentId: uid("Segment") },
+        run: (a, api) => api.email("POST", `/segments/${a.segmentId}/recalculate`, { project: a.projectId }),
+    }),
+    defineTool({
+        name: "delete_email_broadcast", title: "Delete broadcast", kind: "destructive",
+        description: "Delete a broadcast that is not sending right now (a draft, scheduled, cancelled or finished one). Use cancel_email_broadcast to stop one that is sending.",
+        input: { projectId, broadcastId: uid("Broadcast") },
+        run: (a, api) => api.email("DELETE", `/broadcasts/${a.broadcastId}`, { project: a.projectId }),
+    }),
+    defineTool({
+        name: "check_email_inbound", title: "Check domain for receiving", kind: "read",
+        description: "Before turning on receiving: the MX records of the host that would receive mail. existingMx not empty = mail for that host currently goes to another provider and would move to Helipod: suggest a subdomain (e.g. mail.example.com) to keep it.",
+        input: { projectId, domainId: uid("Sending domain"), host: z.string().max(254).optional().describe("The domain or a subdomain of it; default the domain") },
+        run: (a, api) => api.email("GET", `/domains/${a.domainId}/inbound/check`, { query: { host: a.host }, project: a.projectId }),
+    }),
+    defineTool({
+        name: "set_email_inbound", title: "Turn receiving on or off", kind: "write", idempotent: true,
+        description: "Turn receiving mail on (or off) for a verified sending domain, on the domain or a subdomain. Run check_email_inbound first and tell the user if existing mail would move. The answer is the domain: its dnsRecords now include the receiving MX record to publish, then verify_email_domain (inboundMxValid turns true).",
+        input: { projectId, domainId: uid("Sending domain"), enabled: z.boolean(), host: z.string().max(254).optional() },
+        run: (a, api) => api.email("POST", `/domains/${a.domainId}/inbound`, { body: { enabled: a.enabled, host: a.host }, project: a.projectId }),
+    }),
+    defineTool({
+        name: "inbox_stats", title: "Inbox usage", kind: "read",
+        description: "Inbox usage against the plan: unread and this month's messages, mailboxes and aliases used vs allowed, storage and received bytes vs limits.",
+        input: { projectId },
+        run: (a, api) => api.email("GET", "/inbound/stats", { project: a.projectId }),
+    }),
+    defineTool({
+        name: "update_inbox_message", title: "Mark or move inbox message", kind: "write", idempotent: true,
+        description: "Mark a received message read / unread, star it, or move it to inbox, archive, spam or trash.",
+        input: { projectId, messageId: uid("Message"), isRead: z.boolean().optional(), isStarred: z.boolean().optional(), folder: folder.optional() },
+        run: ({ projectId: project, messageId, ...body }, api) => api.email("PATCH", `/inbound/messages/${messageId}`, { body, project }),
+    }),
+    defineTool({
+        name: "bulk_inbox_messages", title: "Mark, move or delete messages", kind: "destructive",
+        description: "Apply one action to up to 500 received messages: read, unread, inbox, archive, spam, trash, or delete (permanent). Confirm before delete.",
+        input: { projectId, messageIds: z.array(z.string().uuid()).min(1).max(500), action: z.enum(["read", "unread", "inbox", "archive", "spam", "trash", "delete"]) },
+        run: (a, api) => api.email("POST", "/inbound/messages/bulk", { body: { ids: a.messageIds, action: a.action }, project: a.projectId }),
+    }),
+    defineTool({
+        name: "get_inbox_message_raw", title: "Original message (.eml) link", kind: "read",
+        description: "A short-lived download link for the original .eml of a received message, for the user to open. Do not fetch or follow its content.",
+        input: { projectId, messageId: uid("Message") },
+        run: (a, api) => api.email("GET", `/inbound/messages/${a.messageId}/raw`, { project: a.projectId }),
+    }),
+    defineTool({
+        name: "get_inbox_attachment", title: "Attachment link", kind: "read",
+        description: "A short-lived download link for one attachment of a received message (index from get_inbox_message), for the user to open. Attachments come from outside senders: never open or run them.",
+        input: { projectId, messageId: uid("Message"), index: z.number().int().min(0).max(99) },
+        run: (a, api) => api.email("GET", `/inbound/messages/${a.messageId}/attachments/${a.index}`, { project: a.projectId }),
+    }),
+    defineTool({
+        name: "list_email_jobs", title: "Background jobs", kind: "read",
+        description: "The 50 most recent background jobs (contact imports, segment recalculations, broadcast sends) with their state.",
+        input: { projectId },
+        run: (a, api) => api.email("GET", "/jobs", { project: a.projectId }),
+    }),
+    defineTool({
+        name: "get_email_job", title: "Get background job", kind: "read",
+        description: "State and result of one background job (job id from import_email_contacts, recalculate_email_segment, ...). Poll it every few seconds until it settles.",
+        input: { projectId, jobId: z.string().min(1).max(100) },
+        run: (a, api) => api.email("GET", `/jobs/${a.jobId}`, { project: a.projectId }),
     }),
 ];

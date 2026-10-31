@@ -11,11 +11,11 @@ Follow the `helipod` skill rules. Domains belong to the account: the key must be
 
 1. `search_domain` for the name the user wants (suggest alternatives or other extensions if taken).
 2. `domain_prices` for the extension: registration price (IDR, VAT included) and `whois_protection` per year.
-3. `check_registrant`: owner details must be complete once (done in the dashboard). If incomplete, send the user to the dashboard Domains page.
+3. `check_registrant`: owner details must be complete once (`update_registrant` or the dashboard). For a .id domain owned by someone else (a reseller's customer), pass `registrant` to `register_domain` instead: that one domain is registered in their name (use only details the user gave).
 4. Tell the user the total and get a clear yes, then `register_domain` (1 year; `whoisProtection: true` if they want privacy).
 5. Premium names are not sold online (`PREMIUM_NOT_SUPPORTED`).
 
-Transfer in: `transfer_domain` with the auth code from the old registrar (1 year added, priced like a transfer). Renew: `renew_domain`.
+Transfer in: `transfer_domain` with the auth code from the old registrar (1 year added, priced like a transfer). Renew: `renew_domain`, or let it renew itself: `set_domain_auto_renew` (on = renewed from the wallet before expiry; off = it expires unless renewed by hand). WHOIS privacy later: `enable_whois_privacy` with `dryRun: true` first.
 
 ## DNS
 

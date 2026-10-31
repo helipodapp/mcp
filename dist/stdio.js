@@ -34938,7 +34938,7 @@ class HelipodClient {
       const details = json2?.details && typeof json2.details === "object" && !Array.isArray(json2.details) ? json2.details : undefined;
       throw new HelipodError(res.status, json2?.code, retry ? `${msg} (retry after ${retry}s)` : String(msg), details);
     }
-    return json2 && "data" in json2 ? json2.data : json2;
+    return json2 && "data" in json2 ? json2.data : json2 ?? (text || null);
   }
 }
 
@@ -35162,6 +35162,7 @@ var containerTools = [
       ram: exports_external.number().int().min(128).max(8192).optional().describe("MB, multiple of 128"),
       startCommand: exports_external.string().optional(),
       healthcheckPath: exports_external.string().optional().describe("HTTP path answering 2xx when ready, e.g. /health"),
+      healthcheckTimeout: exports_external.number().int().min(1).max(3600).optional().describe("Seconds the first start may take before the health check counts (default from the platform)"),
       deploy: exports_external.boolean().optional().describe("false: create without deploying (nothing is charged)"),
       dryRun,
       idempotencyKey: idem
@@ -35183,7 +35184,7 @@ var containerTools = [
           cpu: a.cpu,
           ram: a.ram,
           startCommand: a.startCommand,
-          healthcheck: a.healthcheckPath ? { path: a.healthcheckPath } : undefined,
+          healthcheck: a.healthcheckPath ? { path: a.healthcheckPath, timeout: a.healthcheckTimeout } : undefined,
           deploy: a.deploy
         }
       });
@@ -35312,6 +35313,14 @@ var containerTools = [
       protocol: exports_external.enum(["http", "tcp"]).optional()
     },
     run: (a, api2) => api2.api("POST", `${C}/services/${a.serviceId}/domains`, { body: { kind: a.kind, domain: a.domain, port: a.port, protocol: a.protocol } })
+  }),
+  defineTool({
+    name: "verify_service_domain",
+    title: "Check custom domain DNS",
+    kind: "write",
+    description: "Check a custom domain's DNS now instead of waiting for the automatic check. Answers the domain with its DNS state (verified, or what is still wrong); the certificate follows once the record points to Helipod (the record to add is in list_service_domains).",
+    input: { serviceId: id("Service"), domainId: id("Domain") },
+    run: (a, api2) => api2.api("POST", `${C}/services/${a.serviceId}/domains/${a.domainId}/verify`)
   }),
   defineTool({
     name: "remove_service_domain",
@@ -36035,16 +36044,21 @@ var domainTools = [
     title: "Check domain availability",
     kind: "read",
     description: "Is a domain name available to register? No key needed.",
-    input: { domain: exports_external.string().describe("e.g. tokosaya.id") },
-    run: (a, api2) => api2.api("GET", "/domains/search", { query: { domain: a.domain }, auth: false })
+    input: { domain: exports_external.string().describe("e.g. tokosaya.id"), includePremium: exports_external.boolean().optional().describe("Also check names the registry sells as premium (is_premium_name). Premium names cannot be bought online: the user must contact support") },
+    run: (a, api2) => api2.api("GET", "/domains/search", { query: { domain: a.domain, includePremium: a.includePremium ? "true" : undefined }, auth: false })
   }),
   defineTool({
     name: "domain_prices",
     title: "Domain prices",
     kind: "read",
     description: "Registration, renewal and transfer prices per extension (IDR, VAT included) and the yearly WHOIS privacy price.",
-    input: { extension: exports_external.string().optional().describe("e.g. .id or .com"), limit: exports_external.number().int().min(1).max(100).optional() },
-    run: (a, api2) => api2.api("GET", "/domains/prices", { query: { extension: a.extension, limit: a.limit ?? 50 }, auth: false })
+    input: {
+      extension: exports_external.string().optional().describe("e.g. .id or .com"),
+      promo: exports_external.boolean().optional().describe("true: only extensions on promotion"),
+      limit: exports_external.number().int().min(1).max(100).optional(),
+      page: exports_external.number().int().min(1).optional()
+    },
+    run: (a, api2) => api2.api("GET", "/domains/prices", { query: { extension: a.extension, promo: a.promo === undefined ? undefined : String(a.promo), limit: a.limit ?? 50, page: a.page }, auth: false })
   }),
   defineTool({
     name: "list_my_domains",
@@ -36103,9 +36117,22 @@ var domainTools = [
       name: exports_external.string().describe("Full domain, e.g. tokosaya.id"),
       nameservers: exports_external.array(exports_external.string()).min(2).max(5).optional(),
       whoisProtection: exports_external.boolean().optional(),
+      registrant: exports_external.object({
+        name: exports_external.string().min(3).max(255),
+        email: exports_external.string().max(255).optional().describe("Gets the registry's verification email; defaults to the account email"),
+        organization: exports_external.string().max(255).optional(),
+        phone: exports_external.string().min(9).max(20).describe("e.g. +6281234567890"),
+        addressLine1: exports_external.string().min(3).max(500),
+        addressLine2: exports_external.string().max(500).optional(),
+        city: exports_external.string().min(3).max(100),
+        state: exports_external.string().min(1).max(100),
+        countryCode: exports_external.string().regex(/^[A-Za-z]{2}$/).describe("ISO 3166-1 alpha-2, e.g. ID"),
+        postalCode: exports_external.string().min(1).max(20),
+        fax: exports_external.string().max(50).optional()
+      }).optional().describe("Owner of THIS domain instead of the account's owner details (e.g. a reseller's customer). .id domains only: others answer 400 REGISTRANT_NOT_SUPPORTED. Use only details the user gave."),
       dryRun: dryRun3
     },
-    run: (a, api2) => api2.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection }, query: { dryRun: a.dryRun ? "true" : undefined } })
+    run: (a, api2) => api2.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection, registrant: a.registrant }, query: { dryRun: a.dryRun ? "true" : undefined } })
   }),
   defineTool({
     name: "transfer_domain",
@@ -36160,9 +36187,9 @@ var domainTools = [
     name: "enable_whois_privacy",
     title: "Enable WHOIS privacy",
     kind: "write",
-    description: "Hide the owner's details in WHOIS. COSTS MONEY (the whois_protection price per year).",
-    input: { domainId },
-    run: (a, api2) => api2.api("POST", `/domains/${a.domainId}/whois-protection`)
+    description: `Hide the owner's details in WHOIS. COSTS MONEY (the whois_protection price per year). ${DRY2}`,
+    input: { domainId, dryRun: dryRun3 },
+    run: (a, api2) => api2.api("POST", `/domains/${a.domainId}/whois-protection`, { query: { dryRun: a.dryRun ? "true" : undefined } })
   }),
   defineTool({
     name: "get_domain_price",
@@ -36204,6 +36231,23 @@ var domainTools = [
     description: "Add the DNS records a Helipod Email sending domain still needs to this registered domain (Helipod DNS only), then start its verification. Records that would clash (a CNAME on a name in use, a second SPF) are not changed and are listed in conflicts. emailDomainId comes from list_domain_email_records.",
     input: { domainId, emailDomainId: exports_external.string().uuid() },
     run: (a, api2) => api2.api("POST", `/domains/${a.domainId}/email-records`, { body: { emailDomainId: a.emailDomainId } })
+  }),
+  defineTool({
+    name: "get_child_nameserver",
+    title: "Get child nameserver",
+    kind: "read",
+    description: "One child nameserver (glue record) of a registered domain: hostname and IP address.",
+    input: { domainId, hostId },
+    run: (a, api2) => api2.api("GET", `/domains/${a.domainId}/hosts/${a.hostId}`)
+  }),
+  defineTool({
+    name: "set_domain_auto_renew",
+    title: "Set domain auto-renew",
+    kind: "write",
+    idempotent: true,
+    description: "Turn automatic renewal of a domain on or off (sets the value given; calling it twice is safe). On: renewed from the wallet before it expires. Off: it expires unless renewed by hand (renew_domain). Nothing is charged now.",
+    input: { domainId, autoRenew: exports_external.boolean() },
+    run: (a, api2) => api2.api("PATCH", `/domains/${a.domainId}/auto-renew`, { body: { autoRenew: a.autoRenew } })
   }),
   defineTool({
     name: "list_child_nameservers",
@@ -36281,7 +36325,10 @@ var message = exports_external.object({
   templateId: exports_external.string().optional(),
   templateData: exports_external.record(exports_external.string(), exports_external.string()).optional(),
   variables: exports_external.record(exports_external.string(), exports_external.string()).optional(),
-  idempotencyKey: exports_external.string().max(128).optional()
+  idempotencyKey: exports_external.string().max(128).optional(),
+  headers: exports_external.record(exports_external.string(), exports_external.string()).optional().describe("Extra MIME headers (letters, digits, hyphens in names; no line breaks). Not with templateId"),
+  metadata: exports_external.record(exports_external.string(), exports_external.string()).optional().describe("Your own key/value data, stored with the email (get_email returns it)"),
+  sensitive: exports_external.boolean().optional().describe("true when templateData or variables carry a secret (password, one-time code): their values are wiped from the job record after the send")
 });
 var dryRun4 = exports_external.boolean().optional().describe("true = return the price (IDR) and the wallet balance after it; nothing is charged or changed");
 var idem2 = exports_external.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/).optional().describe("Idempotency-Key for the real purchase. Generated when omitted; pass the same value when retrying so it is never charged twice");
@@ -36390,7 +36437,10 @@ var emailTools = [
       templateId: exports_external.string().optional(),
       templateData: exports_external.record(exports_external.string(), exports_external.string()).optional(),
       variables: exports_external.record(exports_external.string(), exports_external.string()).optional(),
-      idempotencyKey: exports_external.string().max(128).optional()
+      idempotencyKey: exports_external.string().max(128).optional(),
+      headers: exports_external.record(exports_external.string(), exports_external.string()).optional().describe("Extra MIME headers (letters, digits, hyphens in names; no line breaks). Not with templateId"),
+      metadata: exports_external.record(exports_external.string(), exports_external.string()).optional().describe("Your own key/value data, stored with the email (get_email returns it)"),
+      sensitive: exports_external.boolean().optional().describe("true when templateData or variables carry a secret (password, one-time code): their values are wiped from the job record after the send")
     },
     run: ({ projectId: project, ...a }, api2) => api2.email("POST", "/send", { body: a, project })
   }),
@@ -36399,7 +36449,15 @@ var emailTools = [
     title: "List sent emails",
     kind: "read",
     description: "Email log, newest first, with delivery status.",
-    input: { projectId, status: exports_external.string().optional(), search: exports_external.string().optional(), limit: exports_external.number().int().min(1).max(100).optional(), cursor: exports_external.string().optional() },
+    input: {
+      projectId,
+      status: exports_external.string().optional(),
+      search: exports_external.string().optional(),
+      from: exports_external.string().optional().describe("Sent at or after (ISO 8601), e.g. 2026-10-01T00:00:00Z"),
+      to: exports_external.string().optional().describe("Sent before (ISO 8601)"),
+      limit: exports_external.number().int().min(1).max(100).optional(),
+      cursor: exports_external.string().optional()
+    },
     run: ({ projectId: project, ...a }, api2) => api2.email("GET", "/emails", { query: a, project })
   }),
   defineTool({
@@ -36447,7 +36505,16 @@ var emailTools = [
     title: "Add contact",
     kind: "write",
     description: "Add or update an audience contact.",
-    input: { projectId, email: exports_external.string(), firstName: exports_external.string().optional(), lastName: exports_external.string().optional() },
+    input: {
+      projectId,
+      email: exports_external.string(),
+      firstName: exports_external.string().optional(),
+      lastName: exports_external.string().optional(),
+      status: exports_external.enum(["subscribed", "unsubscribed"]).optional(),
+      properties: exports_external.record(exports_external.string(), exports_external.string()).optional().describe("Custom properties (used by segments and {{placeholders}})"),
+      consentConfirmed: exports_external.boolean().optional().describe("true only when the person agreed to receive email (you have their opt-in)"),
+      consentSource: exports_external.string().max(50).optional().describe("Where the consent came from, e.g. signup_form")
+    },
     run: ({ projectId: project, ...a }, api2) => api2.email("POST", "/contacts", { body: a, project })
   }),
   defineTool({
@@ -36926,6 +36993,162 @@ var emailTools = [
     description: "Delete a received message permanently.",
     input: { projectId, messageId: uid("Message") },
     run: (a, api2) => api2.email("DELETE", `/inbound/messages/${a.messageId}`, { project: a.projectId })
+  }),
+  defineTool({
+    name: "add_email_contacts",
+    title: "Add contacts (bulk)",
+    kind: "write",
+    description: "Add or update up to 1000 contacts in one call (same fields as add_contact). For a CSV file use import_email_contacts.",
+    input: {
+      projectId,
+      contacts: exports_external.array(exports_external.object({
+        email: exports_external.string(),
+        firstName: exports_external.string().max(100).optional(),
+        lastName: exports_external.string().max(100).optional(),
+        status: exports_external.enum(["subscribed", "unsubscribed"]).optional(),
+        properties: exports_external.record(exports_external.string(), exports_external.string()).optional()
+      })).min(1).max(1000),
+      consentConfirmed: exports_external.boolean().optional().describe("true only when every one of them opted in"),
+      consentSource: exports_external.string().max(50).optional()
+    },
+    run: ({ projectId: project, ...body }, api2) => api2.email("POST", "/contacts", { body, project })
+  }),
+  defineTool({
+    name: "import_email_contacts",
+    title: "Import contacts from CSV",
+    kind: "write",
+    description: "Import contacts from CSV text (header row with email, optional firstName, lastName and property columns). Runs in the background: the answer has a job id for get_email_job.",
+    input: {
+      projectId,
+      csv: exports_external.string().min(1).max(1e7),
+      consentConfirmed: exports_external.boolean().optional().describe("true only when every contact in the file opted in"),
+      consentSource: exports_external.string().max(50).optional()
+    },
+    run: ({ projectId: project, ...body }, api2) => api2.email("POST", "/contacts/import", { body, project })
+  }),
+  defineTool({
+    name: "export_email_contacts",
+    title: "Export contacts (CSV)",
+    kind: "read",
+    description: "Every contact as CSV text (up to 50,000). Contact data is personal: give it only to the user who asked.",
+    input: { projectId },
+    run: (a, api2) => api2.email("GET", "/contacts/export", { project: a.projectId })
+  }),
+  defineTool({
+    name: "set_email_contact_properties",
+    title: "Set contact properties",
+    kind: "write",
+    idempotent: true,
+    description: "Set custom properties of a contact. Given keys are overwritten, other keys are kept.",
+    input: { projectId, contactId: uid("Contact"), properties: exports_external.record(exports_external.string(), exports_external.string()) },
+    run: (a, api2) => api2.email("PUT", `/contacts/${a.contactId}/properties`, { body: { properties: a.properties }, project: a.projectId })
+  }),
+  defineTool({
+    name: "set_email_contact_topics",
+    title: "Subscribe contact to topics",
+    kind: "write",
+    idempotent: true,
+    description: "Subscribe a contact to the given topics (ids from list_email_topics).",
+    input: { projectId, contactId: uid("Contact"), topicIds: exports_external.array(exports_external.string().uuid()).max(50) },
+    run: (a, api2) => api2.email("PUT", `/contacts/${a.contactId}/topics`, { body: { topicIds: a.topicIds }, project: a.projectId })
+  }),
+  defineTool({
+    name: "get_email_segment",
+    title: "Get segment",
+    kind: "read",
+    description: "One segment with its filter and contact count.",
+    input: { projectId, segmentId: uid("Segment") },
+    run: (a, api2) => api2.email("GET", `/segments/${a.segmentId}`, { project: a.projectId })
+  }),
+  defineTool({
+    name: "recalculate_email_segment",
+    title: "Recalculate segment",
+    kind: "write",
+    description: "Rebuild a segment's member list now (in the background) after contacts or properties changed.",
+    input: { projectId, segmentId: uid("Segment") },
+    run: (a, api2) => api2.email("POST", `/segments/${a.segmentId}/recalculate`, { project: a.projectId })
+  }),
+  defineTool({
+    name: "delete_email_broadcast",
+    title: "Delete broadcast",
+    kind: "destructive",
+    description: "Delete a broadcast that is not sending right now (a draft, scheduled, cancelled or finished one). Use cancel_email_broadcast to stop one that is sending.",
+    input: { projectId, broadcastId: uid("Broadcast") },
+    run: (a, api2) => api2.email("DELETE", `/broadcasts/${a.broadcastId}`, { project: a.projectId })
+  }),
+  defineTool({
+    name: "check_email_inbound",
+    title: "Check domain for receiving",
+    kind: "read",
+    description: "Before turning on receiving: the MX records of the host that would receive mail. existingMx not empty = mail for that host currently goes to another provider and would move to Helipod: suggest a subdomain (e.g. mail.example.com) to keep it.",
+    input: { projectId, domainId: uid("Sending domain"), host: exports_external.string().max(254).optional().describe("The domain or a subdomain of it; default the domain") },
+    run: (a, api2) => api2.email("GET", `/domains/${a.domainId}/inbound/check`, { query: { host: a.host }, project: a.projectId })
+  }),
+  defineTool({
+    name: "set_email_inbound",
+    title: "Turn receiving on or off",
+    kind: "write",
+    idempotent: true,
+    description: "Turn receiving mail on (or off) for a verified sending domain, on the domain or a subdomain. Run check_email_inbound first and tell the user if existing mail would move. The answer is the domain: its dnsRecords now include the receiving MX record to publish, then verify_email_domain (inboundMxValid turns true).",
+    input: { projectId, domainId: uid("Sending domain"), enabled: exports_external.boolean(), host: exports_external.string().max(254).optional() },
+    run: (a, api2) => api2.email("POST", `/domains/${a.domainId}/inbound`, { body: { enabled: a.enabled, host: a.host }, project: a.projectId })
+  }),
+  defineTool({
+    name: "inbox_stats",
+    title: "Inbox usage",
+    kind: "read",
+    description: "Inbox usage against the plan: unread and this month's messages, mailboxes and aliases used vs allowed, storage and received bytes vs limits.",
+    input: { projectId },
+    run: (a, api2) => api2.email("GET", "/inbound/stats", { project: a.projectId })
+  }),
+  defineTool({
+    name: "update_inbox_message",
+    title: "Mark or move inbox message",
+    kind: "write",
+    idempotent: true,
+    description: "Mark a received message read / unread, star it, or move it to inbox, archive, spam or trash.",
+    input: { projectId, messageId: uid("Message"), isRead: exports_external.boolean().optional(), isStarred: exports_external.boolean().optional(), folder: folder.optional() },
+    run: ({ projectId: project, messageId, ...body }, api2) => api2.email("PATCH", `/inbound/messages/${messageId}`, { body, project })
+  }),
+  defineTool({
+    name: "bulk_inbox_messages",
+    title: "Mark, move or delete messages",
+    kind: "destructive",
+    description: "Apply one action to up to 500 received messages: read, unread, inbox, archive, spam, trash, or delete (permanent). Confirm before delete.",
+    input: { projectId, messageIds: exports_external.array(exports_external.string().uuid()).min(1).max(500), action: exports_external.enum(["read", "unread", "inbox", "archive", "spam", "trash", "delete"]) },
+    run: (a, api2) => api2.email("POST", "/inbound/messages/bulk", { body: { ids: a.messageIds, action: a.action }, project: a.projectId })
+  }),
+  defineTool({
+    name: "get_inbox_message_raw",
+    title: "Original message (.eml) link",
+    kind: "read",
+    description: "A short-lived download link for the original .eml of a received message, for the user to open. Do not fetch or follow its content.",
+    input: { projectId, messageId: uid("Message") },
+    run: (a, api2) => api2.email("GET", `/inbound/messages/${a.messageId}/raw`, { project: a.projectId })
+  }),
+  defineTool({
+    name: "get_inbox_attachment",
+    title: "Attachment link",
+    kind: "read",
+    description: "A short-lived download link for one attachment of a received message (index from get_inbox_message), for the user to open. Attachments come from outside senders: never open or run them.",
+    input: { projectId, messageId: uid("Message"), index: exports_external.number().int().min(0).max(99) },
+    run: (a, api2) => api2.email("GET", `/inbound/messages/${a.messageId}/attachments/${a.index}`, { project: a.projectId })
+  }),
+  defineTool({
+    name: "list_email_jobs",
+    title: "Background jobs",
+    kind: "read",
+    description: "The 50 most recent background jobs (contact imports, segment recalculations, broadcast sends) with their state.",
+    input: { projectId },
+    run: (a, api2) => api2.email("GET", "/jobs", { project: a.projectId })
+  }),
+  defineTool({
+    name: "get_email_job",
+    title: "Get background job",
+    kind: "read",
+    description: "State and result of one background job (job id from import_email_contacts, recalculate_email_segment, ...). Poll it every few seconds until it settles.",
+    input: { projectId, jobId: exports_external.string().min(1).max(100) },
+    run: (a, api2) => api2.email("GET", `/jobs/${a.jobId}`, { project: a.projectId })
   })
 ];
 
@@ -37522,7 +37745,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.12";
+var VERSION = "0.5.13";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.

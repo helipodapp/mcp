@@ -146,6 +146,7 @@ export const containerTools = [
             ram: z.number().int().min(128).max(8192).optional().describe("MB, multiple of 128"),
             startCommand: z.string().optional(),
             healthcheckPath: z.string().optional().describe("HTTP path answering 2xx when ready, e.g. /health"),
+            healthcheckTimeout: z.number().int().min(1).max(3600).optional().describe("Seconds the first start may take before the health check counts (default from the platform)"),
             deploy: z.boolean().optional().describe("false: create without deploying (nothing is charged)"),
             dryRun, idempotencyKey: idem,
         },
@@ -159,7 +160,7 @@ export const containerTools = [
                 query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: a.idempotencyKey,
                 body: {
                     name: a.name, source, ports: a.ports, variables: a.variables, volumes: a.volumes, cpu: a.cpu, ram: a.ram,
-                    startCommand: a.startCommand, healthcheck: a.healthcheckPath ? { path: a.healthcheckPath } : undefined, deploy: a.deploy,
+                    startCommand: a.startCommand, healthcheck: a.healthcheckPath ? { path: a.healthcheckPath, timeout: a.healthcheckTimeout } : undefined, deploy: a.deploy,
                 },
             });
         },
@@ -258,6 +259,12 @@ export const containerTools = [
             protocol: z.enum(["http", "tcp"]).optional(),
         },
         run: (a, api) => api.api("POST", `${C}/services/${a.serviceId}/domains`, { body: { kind: a.kind, domain: a.domain, port: a.port, protocol: a.protocol } }),
+    }),
+    defineTool({
+        name: "verify_service_domain", title: "Check custom domain DNS", kind: "write",
+        description: "Check a custom domain's DNS now instead of waiting for the automatic check. Answers the domain with its DNS state (verified, or what is still wrong); the certificate follows once the record points to Helipod (the record to add is in list_service_domains).",
+        input: { serviceId: id("Service"), domainId: id("Domain") },
+        run: (a, api) => api.api("POST", `${C}/services/${a.serviceId}/domains/${a.domainId}/verify`),
     }),
     defineTool({
         name: "remove_service_domain", title: "Remove domain from service", kind: "destructive",

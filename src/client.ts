@@ -113,6 +113,7 @@ export class HelipodClient {
             const details = json?.details && typeof json.details === "object" && !Array.isArray(json.details) ? json.details : undefined;
             throw new HelipodError(res.status, json?.code, retry ? `${msg} (retry after ${retry}s)` : String(msg), details);
         }
-        return (json && "data" in json ? json.data : json) as T;
+        // A non-JSON success (GET /contacts/export is CSV) comes back as its text, not null.
+        return (json && "data" in json ? json.data : json ?? (text || null)) as T;
     }
 }
