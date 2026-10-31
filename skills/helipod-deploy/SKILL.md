@@ -11,6 +11,7 @@ Follow the `helipod` skill rules (price first, confirm destructive actions, neve
 
 `list_projects` → pick the project and environment (usually `production`). If several fit, ask the user.
 `list_services` on that environment shows what already runs (avoid duplicate names; reuse an existing database).
+`get_bundle` tells you whether the account has a container bundle: services within its quota cost the wallet nothing, so a Rp 0 balance is fine.
 
 ## 2. Choose the source
 
@@ -19,7 +20,8 @@ Follow the `helipod` skill rules (price first, confirm destructive actions, neve
 | A published image (Docker Hub, GHCR, private registry) | `image` (fastest, no build). Private: `registryUsername` + `registryPassword` |
 | A public Git repo | `repo` (+ `branch`, `rootDirectory` for monorepos). Built by Helipod: a `Dockerfile` in the folder is used, else **Helipack** detects Node/Bun, PHP and Python frameworks |
 | Only local files | Push to a public Git repo first, or build and push an image. A short `dockerfile` can be sent inline |
-| A database or known app (Postgres, MySQL, Redis, WordPress, n8n, ...) | `list_templates` → `deploy_template` |
+| Needs Postgres | The managed database: `create_database` (FREE plan, nothing to pay), then `get_database_connection` → `DATABASE_URL` as a secret variable. Not a Postgres container |
+| A known app or other database (MySQL, Redis, WordPress, n8n, ...) | `list_templates` → `deploy_template` (`dryRun: true` first) |
 
 Private Git repos are connected in the dashboard (GitHub/GitLab integration), not through the API.
 
@@ -31,7 +33,10 @@ Before deploying a repo, check it quickly: the port the app listens on (prefer `
 
 ## 3. Create (price first)
 
-1. `create_service` with `dryRun: true` → show `dailyCost` (IDR per day) to the user, wait for yes.
+1. `create_service` with `dryRun: true`. Read `walletDailyCost` and `bundle`:
+   - `bundle.coversIt: true` (`walletDailyCost: 0`): tell the user it is included in their bundle (say which, and until when), no charge and **no top-up needed**, and ask to go ahead.
+   - otherwise: tell the user `walletDailyCost` (IDR per day from the wallet; with a bundle it is only the part over the quota). Only if the wallet cannot cover it, offer `create_deposit`.
+   - `dailyCost` is the price without a bundle: never present it as what a bundle owner pays.
 2. `create_service` again without `dryRun`, with an `idempotencyKey`. Give `ports: [{ "port": <app port> }]` so it gets an HTTPS `*.helipod.app` domain.
 3. Poll `get_deployment` until `success` / `failed`. Builds take 1 to 5 minutes; images are faster.
 4. On `success`: give the user the domain `url`. On `failed`: `get_deployment_logs`, find the real error (missing env var, wrong port, build error), fix, `deploy_service` again.
@@ -46,7 +51,7 @@ Before deploying a repo, check it quickly: the port the app listens on (prefer `
 
 - Logs: `get_service_logs` (`filter: "error"`, `since: "1h"`); metrics: `get_service_metrics`.
 - Restart without rebuild: `restart_service` (running services only).
-- Scale: `scale_service` with `dryRun: true` first, show current vs new daily cost.
+- Scale: `scale_service` with `dryRun: true` first, show current vs new daily cost and `walletDailyCost` (0 when the bundle still covers it).
 - Custom domain: `add_service_domain` with `kind: "custom"`, then tell the user the DNS record from the response (`CNAME` to `cname.helipod.app`, or the `A` record for a root domain). If the domain is on Helipod, the `helipod-domains` skill can create the record.
 - Persistent files: `add_volume` (mount path), then redeploy. Without a volume, files are lost on every deploy.
 
@@ -59,6 +64,6 @@ Before deploying a repo, check it quickly: the port the app listens on (prefer `
 | Symptom | Fix |
 |---|---|
 | Health check / deploy timeout | App must listen on the exposed port, on `0.0.0.0`, not `localhost` |
-| `402` | Plan limit (services, CPU, RAM, storage) or low balance: tell the user |
+| `402` | Plan limit (services, CPU, RAM, storage) or low balance: tell the user. Check `get_bundle` first: within a bundle's quota the balance does not matter |
 | Crash loop on start | Read runtime logs; usually a missing variable or failed DB connection |
 | Monorepo built from root | Set `rootDirectory` (`update_service`) and redeploy |

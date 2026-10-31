@@ -5,7 +5,7 @@ description: Use when the user mentions Helipod (helipod.io) or wants to work wi
 
 # Helipod
 
-Helipod is a cloud platform in Indonesia: containers (deploy apps from Git, images or Dockerfiles), managed Postgres databases, VPS, domain registration and DNS, email sending, and an AI gateway. Everything is billed from a prepaid wallet in Rupiah (IDR). When the wallet is too low, `create_deposit` makes a top-up payment link: give the user its `paymentUrl` to pay (QRIS or bank virtual account) and check it with `get_deposit`; never pay it yourself.
+Helipod is a cloud platform in Indonesia: containers (deploy apps from Git, images or Dockerfiles), managed Postgres databases, VPS, domain registration and DNS, email sending, and an AI gateway. Everything is billed from a prepaid wallet in Rupiah (IDR), except container services covered by a monthly **bundle** (`get_bundle`): within its CPU / RAM / storage quota they cost the wallet nothing. The managed Postgres database and email both have a FREE plan. When the wallet is too low, `create_deposit` makes a top-up payment link: give the user its `paymentUrl` to pay (QRIS or bank virtual account) and check it with `get_deposit`; never pay it yourself.
 
 ## Access
 
@@ -19,7 +19,7 @@ Helipod is a cloud platform in Indonesia: containers (deploy apps from Git, imag
 
 ## Rules (always)
 
-1. **Money**: before anything that costs money (create/deploy/scale a service, create/renew/upgrade a VPS, register/renew/transfer a domain, deploy a template), get the price first (`dryRun: true` on container, VPS and domain calls; `domain_prices` and `list_vps_plans` to compare), tell the user the amount in IDR, and wait for a clear yes.
+1. **Money**: before anything that costs money (create/deploy/scale a service, create/renew/upgrade a VPS, register/renew/transfer a domain, deploy a template), get the price first (`dryRun: true` on container, VPS and domain calls; `domain_prices` and `list_vps_plans` to compare), tell the user the amount in IDR, and wait for a clear yes. For containers the amount is `walletDailyCost` (what the wallet pays after the bundle): when the dry run says `bundle.coversIt`, it is included in the bundle and needs no top-up, whatever the balance. Start with free options (FREE database and email plans); offer paid plans only when the user asks for more.
 2. **Destructive**: before deleting a service/volume, terminating/reinstalling a VPS, rolling back a snapshot or replacing DNS records, say exactly what will be lost and wait for a clear yes.
 3. **Background work**: deploys and VPS actions are asynchronous. Poll (`get_deployment`, `get_vps`) every few seconds until they settle; on a failed deploy read `get_deployment_logs` and explain the cause.
 4. **Secrets**: never print passwords, API keys or secret variable values unless the user asks. Store app secrets as secret variables, never in code.

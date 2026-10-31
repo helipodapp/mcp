@@ -84,7 +84,7 @@ export const databaseTools = [
     }),
     defineTool({
         name: "upgrade_database", title: "Upgrade database plan / top up", kind: "write",
-        description: "Buy a paid plan or top up credits. COSTS MONEY from the wallet: call with dryRun first, show price and wallet balance after, and get the user's explicit OK.",
+        description: "Buy a paid plan or top up credits. Only when the user asks for more than the FREE plan gives (never to get started: create_database is free). COSTS MONEY from the wallet (bundles do not cover it): call with dryRun first, show price and wallet balance after, and get the user's explicit OK.",
         input: { databaseId, plan: z.string().describe("Plan code (e.g. STARTER) or id from list_database_plans"), dryRun, idempotencyKey: z.string().max(128).optional() },
         run: (a, api) => api.api("POST", `/databases/${a.databaseId}/upgrade`, { body: { plan: a.plan }, query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: a.idempotencyKey }),
     }),

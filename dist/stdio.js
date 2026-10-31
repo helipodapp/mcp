@@ -34982,7 +34982,7 @@ function purchaseKey(dryRun, given) {
 
 // src/tools/containers.ts
 var id = (what) => exports_external.string().uuid().describe(`${what} id (UUID)`);
-var dryRun = exports_external.boolean().optional().describe("true: return the daily cost (IDR) only, change nothing");
+var dryRun = exports_external.boolean().optional().describe("true: return the cost only (dailyCost list price, walletDailyCost what the wallet pays after the bundle), change nothing");
 var idem = exports_external.string().min(8).max(128).optional().describe("Idempotency-Key: a retry with the same value returns the first result instead of doing it twice");
 var C = "/containers";
 var port = exports_external.object({
@@ -34991,6 +34991,14 @@ var port = exports_external.object({
   public: exports_external.boolean().optional().describe("http ports: give it a *.helipod.app domain (default true)")
 });
 var containerTools = [
+  defineTool({
+    name: "get_bundle",
+    title: "Container bundle",
+    kind: "read",
+    description: "The account's container bundle: whether one is active, until when, quota used / max (vCPU, GB RAM, GB storage), what it covers and what it does not. Container services within the quota cost the wallet NOTHING: read this before telling the user to top up for a container deploy. The bundle covers containers only (not VPS, databases, email, domains or AI).",
+    input: {},
+    run: (_a3, api2) => api2.api("GET", `${C}/bundle`)
+  }),
   defineTool({
     name: "list_projects",
     title: "List projects",
@@ -35136,7 +35144,7 @@ var containerTools = [
     name: "create_service",
     title: "Create service",
     kind: "write",
-    description: "Create a service from a container image, a Git repository or an inline Dockerfile, and (unless deploy=false) start its first deploy. Private GitHub / GitLab repos work once connected (get_git_connections, list_git_repos); such services also redeploy on every push. A private repo that is not connected is refused (409 GITHUB_NOT_CONNECTED / GITLAB_NOT_CONNECTED / REPO_NOT_ACCESSIBLE, nothing created): give the user details.connectUrl and retry after they connect. COSTS MONEY once deployed (billed daily from the wallet): call with dryRun=true first, show the dailyCost to the user and get their OK.",
+    description: "Create a service from a container image, a Git repository or an inline Dockerfile, and (unless deploy=false) start its first deploy. Private GitHub / GitLab repos work once connected (get_git_connections, list_git_repos); such services also redeploy on every push. A private repo that is not connected is refused (409 GITHUB_NOT_CONNECTED / GITLAB_NOT_CONNECTED / REPO_NOT_ACCESSIBLE, nothing created): give the user details.connectUrl and retry after they connect. COSTS MONEY once deployed, beyond the account's bundle: billed daily, from the bundle quota first and the wallet only beyond it. Call with dryRun=true first, tell the user what the wallet pays (walletDailyCost) and get their OK. Before saying a price, read walletDailyCost (what the wallet really pays per day) and bundle: with an active bundle that covers it (bundle.coversIt, walletDailyCost 0) nothing is charged and NO top-up is needed, even with a Rp 0 balance.",
     input: {
       environmentId: id("Environment"),
       name: exports_external.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,39}$/).describe("Service name (letters, digits, _ -; starts with a letter). Also used in references like ${{name.KEY}}"),
@@ -35218,7 +35226,7 @@ var containerTools = [
     name: "deploy_service",
     title: "Deploy service",
     kind: "write",
-    description: "Start a new deployment (Git services build the latest commit). COSTS MONEY: charges today's cost when the build starts, refunded if it fails. dryRun=true returns the cost only. The deployment runs in the background; get_deployment returns its status.",
+    description: "Start a new deployment (Git services build the latest commit). COSTS MONEY beyond the bundle: charges today's cost when the build starts (refunded if it fails), nothing within an active bundle's quota. dryRun=true returns the cost only. Before saying a price, read walletDailyCost (what the wallet really pays per day) and bundle: with an active bundle that covers it (bundle.coversIt, walletDailyCost 0) nothing is charged and NO top-up is needed, even with a Rp 0 balance. The deployment runs in the background; get_deployment returns its status.",
     input: { serviceId: id("Service"), dryRun, idempotencyKey: idem },
     run: (a, api2) => api2.api("POST", `${C}/services/${a.serviceId}/deployments`, { query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: a.idempotencyKey })
   }),
@@ -35326,7 +35334,7 @@ var containerTools = [
     title: "Scale service",
     kind: "write",
     idempotent: true,
-    description: "Change replicas, CPU or RAM (applies right away). COSTS MONEY on increase: call with dryRun=true first to show currentDailyCost vs newDailyCost and get the user's OK.",
+    description: "Change replicas, CPU or RAM (applies right away). An increase COSTS MONEY unless the bundle covers it: call with dryRun=true first to show currentDailyCost vs newDailyCost and walletDailyCost, and get the user's OK. Before saying a price, read walletDailyCost (what the wallet really pays per day) and bundle: with an active bundle that covers it (bundle.coversIt, walletDailyCost 0) nothing is charged and NO top-up is needed, even with a Rp 0 balance.",
     input: {
       serviceId: id("Service"),
       replicas: exports_external.number().int().min(1).max(20).optional(),
@@ -35374,7 +35382,7 @@ var containerTools = [
     name: "resize_volume",
     title: "Resize volume",
     kind: "write",
-    description: "Change a volume's size (1-50 GB; never below the space already used). A larger volume COSTS MONEY: it raises the daily cost, charged pro rata when the service is redeployed and in full from the next renewal. dryRun=true returns currentDailyCost and newDailyCost (IDR) without changing anything. Applies on the next deploy.",
+    description: "Change a volume's size (1-50 GB; never below the space already used). A larger volume COSTS MONEY: it raises the daily cost, charged pro rata when the service is redeployed and in full from the next renewal. dryRun=true returns currentDailyCost, newDailyCost and walletDailyCost (IDR) without changing anything. Applies on the next deploy. Before saying a price, read walletDailyCost (what the wallet really pays per day) and bundle: with an active bundle that covers it (bundle.coversIt, walletDailyCost 0) nothing is charged and NO top-up is needed, even with a Rp 0 balance.",
     input: {
       serviceId: id("Service"),
       volumeId: id("Volume"),
@@ -35496,20 +35504,21 @@ var containerTools = [
     name: "deploy_template",
     title: "Deploy template",
     kind: "write",
-    description: "Create every service of a template in an environment and deploy them. COSTS MONEY (each service is billed daily).",
+    description: "Create every service of a template in an environment and deploy them. COSTS MONEY beyond the bundle: each service is billed daily (bundle quota first, then the wallet). Call with dryRun=true first. " + "Before saying a price, read walletDailyCost (what the wallet really pays per day) and bundle: with an active bundle that covers it (bundle.coversIt, walletDailyCost 0) nothing is charged and NO top-up is needed, even with a Rp 0 balance.",
     input: {
       environmentId: id("Environment"),
       slug: exports_external.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/),
       inputs: exports_external.record(exports_external.string(), exports_external.string()).optional().describe("Answers to the template's inputs"),
+      dryRun,
       idempotencyKey: idem
     },
-    run: (a, api2) => api2.api("POST", `${C}/environments/${a.environmentId}/templates/${a.slug}`, { body: { inputs: a.inputs }, idempotencyKey: a.idempotencyKey })
+    run: (a, api2) => api2.api("POST", `${C}/environments/${a.environmentId}/templates/${a.slug}`, { body: { inputs: a.inputs }, query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: a.idempotencyKey })
   }),
   defineTool({
     name: "create_stack",
     title: "Create stack from spec",
     kind: "write",
-    description: "Create several connected services from a template spec ({ version: 1, inputs?, services: [...] }) and deploy them in dependency order. COSTS MONEY: dryRun=true first. See https://docs.helipod.io/docs/container-api/templates-and-stacks",
+    description: "Create several connected services from a template spec ({ version: 1, inputs?, services: [...] }) and deploy them in dependency order. COSTS MONEY beyond the bundle: billed daily (bundle quota first, then the wallet). dryRun=true first. Before saying a price, read walletDailyCost (what the wallet really pays per day) and bundle: with an active bundle that covers it (bundle.coversIt, walletDailyCost 0) nothing is charged and NO top-up is needed, even with a Rp 0 balance. See https://docs.helipod.io/docs/container-api/templates-and-stacks",
     input: {
       environmentId: id("Environment"),
       spec: exports_external.record(exports_external.string(), exports_external.any()).describe("Template spec object"),
@@ -37028,7 +37037,7 @@ var databaseTools = [
     name: "upgrade_database",
     title: "Upgrade database plan / top up",
     kind: "write",
-    description: "Buy a paid plan or top up credits. COSTS MONEY from the wallet: call with dryRun first, show price and wallet balance after, and get the user's explicit OK.",
+    description: "Buy a paid plan or top up credits. Only when the user asks for more than the FREE plan gives (never to get started: create_database is free). COSTS MONEY from the wallet (bundles do not cover it): call with dryRun first, show price and wallet balance after, and get the user's explicit OK.",
     input: { databaseId, plan: exports_external.string().describe("Plan code (e.g. STARTER) or id from list_database_plans"), dryRun: dryRun5, idempotencyKey: exports_external.string().max(128).optional() },
     run: (a, api2) => api2.api("POST", `/databases/${a.databaseId}/upgrade`, { body: { plan: a.plan }, query: { dryRun: a.dryRun ? "true" : undefined }, idempotencyKey: a.idempotencyKey })
   }),
@@ -37513,10 +37522,13 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.11";
+var VERSION = "0.5.12";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
+- What the user really pays: container services are paid from the account's bundle first (get_bundle: a monthly bundle with a CPU / RAM / storage quota) and from the wallet only beyond it. Container dry runs return walletDailyCost (what the wallet pays per day) and bundle.coversIt: when the bundle covers it, say it is included in their bundle and deploy after their OK; never ask for a top-up for something walletDailyCost says is 0, whatever the balance. Quote dailyCost only as the price without a bundle. The bundle covers containers only: VPS, domains, AI, paid database plans and paid email plans are paid from the wallet.
+- Free first: the managed Postgres database (create_database) starts on the FREE plan and email (buy_email_plan with the FREE plan) costs nothing. For a database, use create_database rather than running Postgres as a container service, and do not offer upgrade_database or a paid email plan unless the user asks for more or hits a limit.
+- Deploying an app, step by step: list_projects (pick the project and its production environmentId) -> get_bundle (is it covered?) -> if it needs Postgres: create_database, then get_database_connection and store DATABASE_URL with set_variables (secrets) after the service exists, or pass it in create_service variables -> create_service with dryRun=true (repo or image, port, variables) -> tell the user the cost (included in the bundle, or walletDailyCost per day) and wait for their OK -> create_service for real -> poll get_deployment until it settles, read get_deployment_logs if it failed -> give the user the *.helipod.app URL from get_service. Ask the user for secrets (API keys) only when the app needs them; never invent values.
 - Destructive tools (delete, terminate, reinstall, rollback, restore a backup or an import, copy a backup onto another VPS, replace DNS, revoke a key, remove an SSH key or port forward, send a broadcast, execute_database_sql): confirm with the user and name what will be lost. Before execute_database_sql, run classify_database_sql.
 - Email: when a project has no email yet (email_status shows activated false) or its plan ended, start it with buy_email_plan (dryRun first; the FREE plan costs nothing, still confirm). That also sets email up for the project; then add and verify a sending domain.
 - Before replacing all DNS records (set_dns_records), read list_dns_records and keep every record the user still needs. Before sending or scheduling a broadcast, tell the user how many contacts it reaches. Before deleting or replacing code, files or variables, read the current value. After renaming a service, fix the variable references listed in warnings.
