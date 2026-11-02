@@ -13,6 +13,16 @@ const record = z.object({
     ttl: z.number().int().optional(),
 });
 
+/** Owner (registrant) of one .id domain: register_domain, transfer_domain, set_domain_owner. */
+const owner = z.object({
+    name: z.string().min(3).max(255), email: z.string().max(255).optional().describe("Gets the registry's verification email; defaults to the account email"),
+    organization: z.string().max(255).optional(), phone: z.string().min(9).max(20).describe("e.g. +6281234567890"),
+    addressLine1: z.string().min(3).max(500), addressLine2: z.string().max(500).optional(),
+    city: z.string().min(3).max(100), state: z.string().min(1).max(100),
+    countryCode: z.string().regex(/^[A-Za-z]{2}$/).describe("ISO 3166-1 alpha-2, e.g. ID"), postalCode: z.string().min(1).max(20),
+    fax: z.string().max(50).optional(),
+});
+
 export const domainTools = [
     defineTool({
         name: "search_domain", title: "Check domain availability", kind: "read",
@@ -76,23 +86,26 @@ export const domainTools = [
             name: z.string().describe("Full domain, e.g. tokosaya.id"),
             nameservers: z.array(z.string()).min(2).max(5).optional(),
             whoisProtection: z.boolean().optional(),
-            registrant: z.object({
-                name: z.string().min(3).max(255), email: z.string().max(255).optional().describe("Gets the registry's verification email; defaults to the account email"),
-                organization: z.string().max(255).optional(), phone: z.string().min(9).max(20).describe("e.g. +6281234567890"),
-                addressLine1: z.string().min(3).max(500), addressLine2: z.string().max(500).optional(),
-                city: z.string().min(3).max(100), state: z.string().min(1).max(100),
-                countryCode: z.string().regex(/^[A-Za-z]{2}$/).describe("ISO 3166-1 alpha-2, e.g. ID"), postalCode: z.string().min(1).max(20),
-                fax: z.string().max(50).optional(),
-            }).optional().describe("Owner of THIS domain instead of the account's owner details (e.g. a reseller's customer). .id domains only: others answer 400 REGISTRANT_NOT_SUPPORTED. Use only details the user gave."),
+            registrant: owner.optional().describe("Owner of THIS domain instead of the account's owner details (e.g. a reseller's customer). .id domains only: others answer 400 REGISTRANT_NOT_SUPPORTED. Use only details the user gave."),
             dryRun,
         },
         run: (a, api) => api.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection, registrant: a.registrant }, query: { dryRun: a.dryRun ? "true" : undefined } }),
     }),
     defineTool({
         name: "transfer_domain", title: "Transfer domain in", kind: "write",
-        description: `Transfer a domain from another registrar (adds 1 year). COSTS MONEY from the wallet. Needs the domain's auth code. ${DRY}`,
-        input: { name: z.string(), authCode: z.string(), nameservers: z.array(z.string()).min(2).max(5).optional(), dryRun },
-        run: (a, api) => api.api("POST", "/domains/transfer", { body: { name: a.name, authCode: a.authCode, period: 1, nameservers: a.nameservers }, query: { dryRun: a.dryRun ? "true" : undefined } }),
+        description: `Transfer a domain from another registrar (adds 1 year). COSTS MONEY from the wallet. Needs the domain's auth code. ${DRY} With registrant (.id only) the domain gets that owner when the transfer completes (ownerPending until then); without it, the account's owner details.`,
+        input: {
+            name: z.string(), authCode: z.string(), nameservers: z.array(z.string()).min(2).max(5).optional(),
+            registrant: owner.optional().describe("Owner of THIS domain once the transfer completes (e.g. a reseller's customer). .id domains only: others answer 400 REGISTRANT_NOT_SUPPORTED. Use only details the user gave."),
+            dryRun,
+        },
+        run: (a, api) => api.api("POST", "/domains/transfer", { body: { name: a.name, authCode: a.authCode, period: 1, nameservers: a.nameservers, registrant: a.registrant }, query: { dryRun: a.dryRun ? "true" : undefined } }),
+    }),
+    defineTool({
+        name: "set_domain_owner", title: "Set domain owner", kind: "write",
+        description: "Set a new owner (registrant) for one .id domain of the account, e.g. a reseller's customer or a domain transferred earlier. Free. An active domain gets it now (ownerPending false); a transfer in progress gets it when it completes, and a change the registry does not take yet is retried automatically (ownerPending true, HTTP 202). Other domains keep their other contacts. Use only details the user gave.",
+        input: { domainId, owner },
+        run: (a, api) => api.api("PATCH", `/domains/${a.domainId}/registrant`, { body: a.owner }),
     }),
     defineTool({
         name: "renew_domain", title: "Renew domain", kind: "write",

@@ -64,6 +64,19 @@ export class HelipodClient {
     }
 
     /**
+     * Email API with the Helipod API key / sign-in token only, never an email key: for the email key routes, which
+     * email keys may not use (a leaked email key must not make more keys).
+     */
+    emailWithAccountKey<T = unknown>(method: string, path: string, opts: { query?: Query; body?: unknown; project?: string } = {}) {
+        const key = this.cfg.apiKey;
+        if (!key) {
+            throw new HelipodError(401, "NO_API_KEY", "Managing email keys needs HELIPOD_API_KEY (a Helipod API key with the Email API enabled); an email key cannot do it.");
+        }
+        const headers = opts.project ? { "x-helipod-project": opts.project } : undefined;
+        return this.request<T>(this.emailApiUrl, key, method, path, { ...opts, headers });
+    }
+
+    /**
      * A generated image by its signed link, for showing it inline: https links on helipod.io only (they come from our
      * own API), at most maxBytes. null when it is not an image, too big or unreachable: the caller then gives the link.
      */

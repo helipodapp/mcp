@@ -148,6 +148,24 @@ export const emailTools = [
         run: (a, api) => api.email("POST", `/domains/${a.domainId}/verify`, { project: a.projectId }),
     }),
     defineTool({
+        name: "list_email_keys", title: "List email keys", kind: "read",
+        description: "Email API keys of a project (name, prefix, last used, expiry; never the key itself). Needs a Helipod API key with the Email API: an email key or a sign-in token answers 403 KEY_NOT_ALLOWED.",
+        input: { projectId },
+        run: (a, api) => api.emailWithAccountKey("GET", "/keys", { project: a.projectId }),
+    }),
+    defineTool({
+        name: "create_email_key", title: "Create email key", kind: "write",
+        description: "Make an email API key for a project, e.g. one per customer of a reseller. The key works on the Email API and as the SMTP password (smtp.helipod.io, username apikey) for that project only, and cannot make keys itself. The full key is in the answer ONCE: give it to the user to store; it cannot be shown again. Needs a Helipod API key with the Email API (an email key or a sign-in token answers 403 KEY_NOT_ALLOWED). Per project: 5 active keys on Free/Starter, 10 on Pro, 50 on Business.",
+        input: { projectId, name: z.string().min(1).max(100).describe("To tell keys apart, e.g. the customer's name"), expiresInDays: z.number().int().min(1).max(3650).optional() },
+        run: (a, api) => api.emailWithAccountKey("POST", "/keys", { project: a.projectId, body: { name: a.name, expiresInDays: a.expiresInDays } }),
+    }),
+    defineTool({
+        name: "revoke_email_key", title: "Revoke email key", kind: "destructive",
+        description: "Revoke an email API key of the project: it stops working at once, also for open SMTP sessions. Apps using it can no longer send. Needs a Helipod API key with the Email API.",
+        input: { projectId, keyId: uid("Email key") },
+        run: (a, api) => api.emailWithAccountKey("DELETE", `/keys/${a.keyId}`, { project: a.projectId }),
+    }),
+    defineTool({
         name: "list_email_templates", title: "List email templates", kind: "read",
         description: "Email templates of the project.",
         input: { projectId },

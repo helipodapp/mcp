@@ -15,7 +15,7 @@ Follow the `helipod` skill rules. Domains belong to the account: the key must be
 4. Tell the user the total and get a clear yes, then `register_domain` (1 year; `whoisProtection: true` if they want privacy).
 5. Premium names are not sold online (`PREMIUM_NOT_SUPPORTED`).
 
-Transfer in: `transfer_domain` with the auth code from the old registrar (1 year added, priced like a transfer). Renew: `renew_domain`, or let it renew itself: `set_domain_auto_renew` (on = renewed from the wallet before expiry; off = it expires unless renewed by hand). WHOIS privacy later: `enable_whois_privacy` with `dryRun: true` first.
+Transfer in: `transfer_domain` with the auth code from the old registrar (1 year added, priced like a transfer). For a .id domain owned by someone else, pass `registrant`: it becomes the owner when the transfer completes (`ownerPending` until then; without it, the account's owner details). Change the owner of a .id domain already on the account: `set_domain_owner` (free). Renew: `renew_domain`, or let it renew itself: `set_domain_auto_renew` (on = renewed from the wallet before expiry; off = it expires unless renewed by hand). WHOIS privacy later: `enable_whois_privacy` with `dryRun: true` first.
 
 ## DNS
 

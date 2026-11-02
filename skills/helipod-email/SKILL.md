@@ -10,8 +10,14 @@ Uses the Helipod API key `HELIPOD_API_KEY` with **Email API** enabled (Settings 
 ## Set up
 
 1. `email_status`: the project needs an email plan (the Free plan is fine for testing).
-2. `add_email_domain` with the domain to send from (often a subdomain like `mail.example.com`), then give the user the DNS records from the response exactly as listed (copy them verbatim). If the domain is on Helipod, use the `helipod-domains` skill to add them.
+2. `add_email_domain` with the domain to send from (often a subdomain like `mail.example.com`). Domain on Helipod: `list_domain_email_records` then `add_domain_email_records` puts every record in place in one call. Elsewhere: give the user the DNS records from the response exactly as listed (copy them verbatim).
 3. `verify_email_domain` until it is verified.
+
+## Email keys and SMTP
+
+- An app or a customer gets its own key: `create_email_key` (name it after the app or customer). The full key is in the answer once; store it as a secret. It works for that project only, and cannot make keys.
+- `list_email_keys`, `revoke_email_key` (stops it at once, also open SMTP sessions). Managing keys needs the Helipod API key (`HELIPOD_API_KEY`); an email key or an AI-tool sign-in answers `403 KEY_NOT_ALLOWED`.
+- SMTP for apps that only speak SMTP (WordPress, Laravel, PHPMailer): host `smtp.helipod.io`, port 587 (STARTTLS) or 465 (SSL), username `apikey`, password = an email key (not the Helipod API key). From = an address on a verified domain.
 
 ## Send from code
 

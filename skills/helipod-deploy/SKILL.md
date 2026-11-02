@@ -23,7 +23,7 @@ Follow the `helipod` skill rules (price first, confirm destructive actions, neve
 | Needs Postgres | The managed database: `create_database` (FREE plan, nothing to pay), then `get_database_connection` → `DATABASE_URL` as a secret variable. Not a Postgres container |
 | A known app or other database (MySQL, Redis, WordPress, n8n, ...) | `list_templates` → `deploy_template` (`dryRun: true` first) |
 
-Private Git repos are connected in the dashboard (GitHub/GitLab integration), not through the API.
+Private Git repos: `get_git_connections` shows whether GitHub / GitLab is connected, `list_git_repos` lists what it can reach; pass a repo `url` to `create_service` (such services redeploy on every push). Not connected yet: the call answers 409 with `details.connectUrl`; give the user that link to connect in their browser, then retry. Never try to connect it yourself.
 
 Before deploying a repo, check it quickly: the port the app listens on (prefer `process.env.PORT`), the start command, a health endpoint. For Next.js Helipack adds `output: "standalone"` itself. To override detection, add `helipack.json` at the app root:
 
@@ -54,6 +54,10 @@ Before deploying a repo, check it quickly: the port the app listens on (prefer `
 - Scale: `scale_service` with `dryRun: true` first, show current vs new daily cost and `walletDailyCost` (0 when the bundle still covers it).
 - Custom domain: `add_service_domain` with `kind: "custom"`, then tell the user the DNS record from the response (`CNAME` to `cname.helipod.app`, or the `A` record for a root domain). If the domain is on Helipod, the `helipod-domains` skill can create the record.
 - Persistent files: `add_volume` (mount path), then redeploy. Without a volume, files are lost on every deploy.
+
+## Domain and email for the app
+
+A custom domain and working email together: `helipod-launch` (recipe A) has the whole sequence, including one-call DNS when the domain is on Helipod.
 
 ## Several services at once
 

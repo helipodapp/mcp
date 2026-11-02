@@ -2,8 +2,8 @@
 
 Use [Helipod](https://helipod.io) from AI coding tools: deploy apps and databases, run VPS servers, buy domains and edit DNS, and send email, by asking in plain language.
 
-- **MCP server** (`helipod-mcp`): 238 tools over the Container, Database, VPS, Domain, Email, Account and AI APIs. Works in Claude Code, Codex, Cursor, VS Code, Windsurf, Claude Desktop and any MCP client.
-- **Skills** (`skills/`): step-by-step playbooks so the agent deploys, prices and confirms the way Helipod expects (price first, confirm before deleting, read build logs on failure).
+- **MCP server** (`helipod-mcp`): 263 tools over the Container, Database, VPS, Domain, Email, Account and AI APIs. Works in Claude Code, Codex, Cursor, VS Code, Windsurf, Claude Desktop and any MCP client.
+- **Skills** (`skills/`): step-by-step playbooks so the agent deploys, prices and confirms the way Helipod expects (price first, confirm before deleting, read build logs on failure): containers, VPS and apps on a VPS, databases, domains, email, the AI gateway, end-to-end launches (app + database + domain + email) and reselling.
 
 Step-by-step guides for each tool (Claude Code, Codex, Cursor, VS Code, Gemini CLI, opencode, Windsurf, Claude Desktop, Cline and others): **https://docs.helipod.io/docs/helipod/ai-agents**
 

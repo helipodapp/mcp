@@ -34875,6 +34875,14 @@ class HelipodClient {
     const headers = !this.cfg.emailApiKey && opts.project ? { "x-helipod-project": opts.project } : undefined;
     return this.request(this.emailApiUrl, key, method, path, { ...opts, headers });
   }
+  emailWithAccountKey(method, path, opts = {}) {
+    const key = this.cfg.apiKey;
+    if (!key) {
+      throw new HelipodError(401, "NO_API_KEY", "Managing email keys needs HELIPOD_API_KEY (a Helipod API key with the Email API enabled); an email key cannot do it.");
+    }
+    const headers = opts.project ? { "x-helipod-project": opts.project } : undefined;
+    return this.request(this.emailApiUrl, key, method, path, { ...opts, headers });
+  }
   async image(link, maxBytes) {
     let url2;
     try {
@@ -35005,7 +35013,7 @@ var containerTools = [
     kind: "read",
     description: "Projects this API key can reach, each with its environments (production, staging, ...). Start here to find an environmentId.",
     input: {},
-    run: (_a3, api2) => api2.api("GET", `${C}/projects`)
+    run: (_a3, api2) => api2.api("GET", `/projects`)
   }),
   defineTool({
     name: "get_project",
@@ -35013,7 +35021,7 @@ var containerTools = [
     kind: "read",
     description: "One project with its environments (ids and names). Use it to find an environmentId when you already know the project.",
     input: { projectId: id("Project") },
-    run: (a, api2) => api2.api("GET", `${C}/projects/${a.projectId}`)
+    run: (a, api2) => api2.api("GET", `/projects/${a.projectId}`)
   }),
   defineTool({
     name: "create_project",
@@ -35021,7 +35029,7 @@ var containerTools = [
     kind: "write",
     description: "Create a project (free) with its default production environment. Needs a whole-account key (a key limited to one project gets 403). Pass an idempotencyKey when retrying.",
     input: { name: exports_external.string().min(3).max(100), description: exports_external.string().max(500).optional(), idempotencyKey: idem },
-    run: (a, api2) => api2.api("POST", `${C}/projects`, { body: { name: a.name, description: a.description }, idempotencyKey: a.idempotencyKey })
+    run: (a, api2) => api2.api("POST", `/projects`, { body: { name: a.name, description: a.description }, idempotencyKey: a.idempotencyKey })
   }),
   defineTool({
     name: "update_project",
@@ -35030,7 +35038,7 @@ var containerTools = [
     idempotent: true,
     description: "Change a project's name and/or description.",
     input: { projectId: id("Project"), name: exports_external.string().min(3).max(100).optional(), description: exports_external.string().max(500).optional() },
-    run: (a, api2) => api2.api("PATCH", `${C}/projects/${a.projectId}`, { body: { name: a.name, description: a.description } })
+    run: (a, api2) => api2.api("PATCH", `/projects/${a.projectId}`, { body: { name: a.name, description: a.description } })
   }),
   defineTool({
     name: "delete_project",
@@ -35038,7 +35046,7 @@ var containerTools = [
     kind: "destructive",
     description: "Delete an EMPTY project and its environments and shared variables. Irreversible. Refused (409 PROJECT_NOT_EMPTY) while it still has services, databases, VPS or other resources: those must be deleted first. Needs a whole-account key. Only after the user confirms; confirm must be the project's exact name.",
     input: { projectId: id("Project"), confirm: exports_external.string().max(255).describe("The project name, exactly") },
-    run: (a, api2) => api2.api("DELETE", `${C}/projects/${a.projectId}`, { body: { confirm: a.confirm } })
+    run: (a, api2) => api2.api("DELETE", `/projects/${a.projectId}`, { body: { confirm: a.confirm } })
   }),
   defineTool({
     name: "create_environment",
@@ -35046,7 +35054,7 @@ var containerTools = [
     kind: "write",
     description: "Add an environment (e.g. staging) to a project. Free; services in it are billed as usual once deployed.",
     input: { projectId: id("Project"), name: exports_external.string().regex(/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,49}$/).describe("1-50 characters: letters, digits, space _ . -") },
-    run: (a, api2) => api2.api("POST", `${C}/projects/${a.projectId}/environments`, { body: { name: a.name } })
+    run: (a, api2) => api2.api("POST", `/projects/${a.projectId}/environments`, { body: { name: a.name } })
   }),
   defineTool({
     name: "rename_environment",
@@ -35055,7 +35063,7 @@ var containerTools = [
     idempotent: true,
     description: "Rename an environment (names are unique within the project).",
     input: { environmentId: id("Environment"), name: exports_external.string().regex(/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,49}$/) },
-    run: (a, api2) => api2.api("PATCH", `${C}/environments/${a.environmentId}`, { body: { name: a.name } })
+    run: (a, api2) => api2.api("PATCH", `/environments/${a.environmentId}`, { body: { name: a.name } })
   }),
   defineTool({
     name: "delete_environment",
@@ -35063,7 +35071,7 @@ var containerTools = [
     kind: "destructive",
     description: "Delete an EMPTY environment (409 ENVIRONMENT_NOT_EMPTY while it has services: delete them first). Irreversible. Only after the user confirms; confirm must be the environment's exact name.",
     input: { environmentId: id("Environment"), confirm: exports_external.string().max(255).describe("The environment name, exactly") },
-    run: (a, api2) => api2.api("DELETE", `${C}/environments/${a.environmentId}`, { body: { confirm: a.confirm } })
+    run: (a, api2) => api2.api("DELETE", `/environments/${a.environmentId}`, { body: { confirm: a.confirm } })
   }),
   defineTool({
     name: "list_project_variables",
@@ -36038,6 +36046,19 @@ var record3 = exports_external.object({
   content: exports_external.string().describe('TXT without surrounding quotes (they are added by the DNS server); MX as "10 mail.example.com"'),
   ttl: exports_external.number().int().optional()
 });
+var owner = exports_external.object({
+  name: exports_external.string().min(3).max(255),
+  email: exports_external.string().max(255).optional().describe("Gets the registry's verification email; defaults to the account email"),
+  organization: exports_external.string().max(255).optional(),
+  phone: exports_external.string().min(9).max(20).describe("e.g. +6281234567890"),
+  addressLine1: exports_external.string().min(3).max(500),
+  addressLine2: exports_external.string().max(500).optional(),
+  city: exports_external.string().min(3).max(100),
+  state: exports_external.string().min(1).max(100),
+  countryCode: exports_external.string().regex(/^[A-Za-z]{2}$/).describe("ISO 3166-1 alpha-2, e.g. ID"),
+  postalCode: exports_external.string().min(1).max(20),
+  fax: exports_external.string().max(50).optional()
+});
 var domainTools = [
   defineTool({
     name: "search_domain",
@@ -36117,19 +36138,7 @@ var domainTools = [
       name: exports_external.string().describe("Full domain, e.g. tokosaya.id"),
       nameservers: exports_external.array(exports_external.string()).min(2).max(5).optional(),
       whoisProtection: exports_external.boolean().optional(),
-      registrant: exports_external.object({
-        name: exports_external.string().min(3).max(255),
-        email: exports_external.string().max(255).optional().describe("Gets the registry's verification email; defaults to the account email"),
-        organization: exports_external.string().max(255).optional(),
-        phone: exports_external.string().min(9).max(20).describe("e.g. +6281234567890"),
-        addressLine1: exports_external.string().min(3).max(500),
-        addressLine2: exports_external.string().max(500).optional(),
-        city: exports_external.string().min(3).max(100),
-        state: exports_external.string().min(1).max(100),
-        countryCode: exports_external.string().regex(/^[A-Za-z]{2}$/).describe("ISO 3166-1 alpha-2, e.g. ID"),
-        postalCode: exports_external.string().min(1).max(20),
-        fax: exports_external.string().max(50).optional()
-      }).optional().describe("Owner of THIS domain instead of the account's owner details (e.g. a reseller's customer). .id domains only: others answer 400 REGISTRANT_NOT_SUPPORTED. Use only details the user gave."),
+      registrant: owner.optional().describe("Owner of THIS domain instead of the account's owner details (e.g. a reseller's customer). .id domains only: others answer 400 REGISTRANT_NOT_SUPPORTED. Use only details the user gave."),
       dryRun: dryRun3
     },
     run: (a, api2) => api2.api("POST", "/domains/register", { body: { name: a.name, period: 1, nameservers: a.nameservers, whoisProtection: a.whoisProtection, registrant: a.registrant }, query: { dryRun: a.dryRun ? "true" : undefined } })
@@ -36138,9 +36147,23 @@ var domainTools = [
     name: "transfer_domain",
     title: "Transfer domain in",
     kind: "write",
-    description: `Transfer a domain from another registrar (adds 1 year). COSTS MONEY from the wallet. Needs the domain's auth code. ${DRY2}`,
-    input: { name: exports_external.string(), authCode: exports_external.string(), nameservers: exports_external.array(exports_external.string()).min(2).max(5).optional(), dryRun: dryRun3 },
-    run: (a, api2) => api2.api("POST", "/domains/transfer", { body: { name: a.name, authCode: a.authCode, period: 1, nameservers: a.nameservers }, query: { dryRun: a.dryRun ? "true" : undefined } })
+    description: `Transfer a domain from another registrar (adds 1 year). COSTS MONEY from the wallet. Needs the domain's auth code. ${DRY2} With registrant (.id only) the domain gets that owner when the transfer completes (ownerPending until then); without it, the account's owner details.`,
+    input: {
+      name: exports_external.string(),
+      authCode: exports_external.string(),
+      nameservers: exports_external.array(exports_external.string()).min(2).max(5).optional(),
+      registrant: owner.optional().describe("Owner of THIS domain once the transfer completes (e.g. a reseller's customer). .id domains only: others answer 400 REGISTRANT_NOT_SUPPORTED. Use only details the user gave."),
+      dryRun: dryRun3
+    },
+    run: (a, api2) => api2.api("POST", "/domains/transfer", { body: { name: a.name, authCode: a.authCode, period: 1, nameservers: a.nameservers, registrant: a.registrant }, query: { dryRun: a.dryRun ? "true" : undefined } })
+  }),
+  defineTool({
+    name: "set_domain_owner",
+    title: "Set domain owner",
+    kind: "write",
+    description: "Set a new owner (registrant) for one .id domain of the account, e.g. a reseller's customer or a domain transferred earlier. Free. An active domain gets it now (ownerPending false); a transfer in progress gets it when it completes, and a change the registry does not take yet is retried automatically (ownerPending true, HTTP 202). Other domains keep their other contacts. Use only details the user gave.",
+    input: { domainId, owner },
+    run: (a, api2) => api2.api("PATCH", `/domains/${a.domainId}/registrant`, { body: a.owner })
   }),
   defineTool({
     name: "renew_domain",
@@ -36491,6 +36514,30 @@ var emailTools = [
     description: "Check a sending domain's DNS records again now. Pending domains are also re-checked automatically every 30 minutes for 3 days.",
     input: { projectId, domainId: exports_external.string() },
     run: (a, api2) => api2.email("POST", `/domains/${a.domainId}/verify`, { project: a.projectId })
+  }),
+  defineTool({
+    name: "list_email_keys",
+    title: "List email keys",
+    kind: "read",
+    description: "Email API keys of a project (name, prefix, last used, expiry; never the key itself). Needs a Helipod API key with the Email API: an email key or a sign-in token answers 403 KEY_NOT_ALLOWED.",
+    input: { projectId },
+    run: (a, api2) => api2.emailWithAccountKey("GET", "/keys", { project: a.projectId })
+  }),
+  defineTool({
+    name: "create_email_key",
+    title: "Create email key",
+    kind: "write",
+    description: "Make an email API key for a project, e.g. one per customer of a reseller. The key works on the Email API and as the SMTP password (smtp.helipod.io, username apikey) for that project only, and cannot make keys itself. The full key is in the answer ONCE: give it to the user to store; it cannot be shown again. Needs a Helipod API key with the Email API (an email key or a sign-in token answers 403 KEY_NOT_ALLOWED). Per project: 5 active keys on Free/Starter, 10 on Pro, 50 on Business.",
+    input: { projectId, name: exports_external.string().min(1).max(100).describe("To tell keys apart, e.g. the customer's name"), expiresInDays: exports_external.number().int().min(1).max(3650).optional() },
+    run: (a, api2) => api2.emailWithAccountKey("POST", "/keys", { project: a.projectId, body: { name: a.name, expiresInDays: a.expiresInDays } })
+  }),
+  defineTool({
+    name: "revoke_email_key",
+    title: "Revoke email key",
+    kind: "destructive",
+    description: "Revoke an email API key of the project: it stops working at once, also for open SMTP sessions. Apps using it can no longer send. Needs a Helipod API key with the Email API.",
+    input: { projectId, keyId: uid("Email key") },
+    run: (a, api2) => api2.emailWithAccountKey("DELETE", `/keys/${a.keyId}`, { project: a.projectId })
   }),
   defineTool({
     name: "list_email_templates",
@@ -37745,7 +37792,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.13";
+var VERSION = "0.5.14";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
@@ -37754,6 +37801,8 @@ var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed
 - Deploying an app, step by step: list_projects (pick the project and its production environmentId) -> get_bundle (is it covered?) -> if it needs Postgres: create_database, then get_database_connection and store DATABASE_URL with set_variables (secrets) after the service exists, or pass it in create_service variables -> create_service with dryRun=true (repo or image, port, variables) -> tell the user the cost (included in the bundle, or walletDailyCost per day) and wait for their OK -> create_service for real -> poll get_deployment until it settles, read get_deployment_logs if it failed -> give the user the *.helipod.app URL from get_service. Ask the user for secrets (API keys) only when the app needs them; never invent values.
 - Destructive tools (delete, terminate, reinstall, rollback, restore a backup or an import, copy a backup onto another VPS, replace DNS, revoke a key, remove an SSH key or port forward, send a broadcast, execute_database_sql): confirm with the user and name what will be lost. Before execute_database_sql, run classify_database_sql.
 - Email: when a project has no email yet (email_status shows activated false) or its plan ended, start it with buy_email_plan (dryRun first; the FREE plan costs nothing, still confirm). That also sets email up for the project; then add and verify a sending domain.
+- Email keys: create_email_key gives an app or a customer its own key (also its SMTP password: smtp.helipod.io, username apikey); the full key is shown once, so hand it over and never print it again. Domain on Helipod: add_domain_email_records puts the sending domain's DNS records in place in one call.
+- Domains for someone else (resellers): register_domain and transfer_domain take registrant (.id only; a transfer gets the owner when it completes), set_domain_owner changes it later. Use only details the user gave.
 - Before replacing all DNS records (set_dns_records), read list_dns_records and keep every record the user still needs. Before sending or scheduling a broadcast, tell the user how many contacts it reaches. Before deleting or replacing code, files or variables, read the current value. After renaming a service, fix the variable references listed in warnings.
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
 - Migrate (free): create_vps_import returns a one-time command for the USER to run as root on their old server (never run it yourself); before the first restore_vps_import, show fetchedIp and ask the user to confirm it is their server.
