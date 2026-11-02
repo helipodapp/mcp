@@ -94,6 +94,12 @@ export const emailTools = [
         }),
     }),
     defineTool({
+        name: "set_email_auto_renew", title: "Set email auto-renew", kind: "write", idempotent: true,
+        description: "Turn the active email plan's auto-renew on or off (sets the value, safe to repeat). On: the plan renews from the wallet deposit when it ends; off: it ends at its expiry date. get_email_plan and email_status show it as autoRenew. A free plan renews at Rp 0.",
+        input: { projectId, autoRenew: z.boolean() },
+        run: (a, api) => api.email("POST", "/plan/auto-renew", { project: a.projectId, body: { enabled: a.autoRenew } }),
+    }),
+    defineTool({
         name: "send_email", title: "Send email", kind: "write",
         description: "Send one email from a verified domain of the project (counts against the plan's quota). Use templateId + templateData, or subject + html/text. Pass an idempotencyKey when retrying.",
         input: {

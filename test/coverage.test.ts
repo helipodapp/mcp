@@ -26,6 +26,17 @@ async function connect(f: typeof fetch) {
 const last = (c: { calls: any[] }) => c.calls.at(-1)!;
 
 describe("audit additions", () => {
+    test("email: set_email_auto_renew sends enabled to /plan/auto-renew for the project", async () => {
+        const api = fakeApi(); const c = await connect(api.f);
+        await c.callTool({ name: "set_email_auto_renew", arguments: { projectId: U, autoRenew: false } });
+        expect(last(api).method).toBe("POST");
+        expect(last(api).url.href).toStartWith("https://mail.helipod.io/api/email/plan/auto-renew");
+        expect(last(api).body).toEqual({ enabled: false });
+        await c.callTool({ name: "set_email_auto_renew", arguments: { autoRenew: true } });
+        expect(last(api).body).toEqual({ enabled: true });
+        const bad = await c.callTool({ name: "set_email_auto_renew", arguments: { projectId: U, autoRenew: "no" } });
+        expect(bad.isError).toBe(true);
+    });
     test("domains: auto-renew, child nameserver, registrant, premium, prices filters, WHOIS dry run", async () => {
         const api = fakeApi(); const c = await connect(api.f);
         await c.callTool({ name: "set_domain_auto_renew", arguments: { domainId: 12, autoRenew: false } });

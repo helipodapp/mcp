@@ -36443,6 +36443,15 @@ var emailTools = [
     })
   }),
   defineTool({
+    name: "set_email_auto_renew",
+    title: "Set email auto-renew",
+    kind: "write",
+    idempotent: true,
+    description: "Turn the active email plan's auto-renew on or off (sets the value, safe to repeat). On: the plan renews from the wallet deposit when it ends; off: it ends at its expiry date. get_email_plan and email_status show it as autoRenew. A free plan renews at Rp 0.",
+    input: { projectId, autoRenew: exports_external.boolean() },
+    run: (a, api2) => api2.email("POST", "/plan/auto-renew", { project: a.projectId, body: { enabled: a.autoRenew } })
+  }),
+  defineTool({
     name: "send_email",
     title: "Send email",
     kind: "write",
@@ -37792,7 +37801,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.14";
+var VERSION = "0.5.15";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
