@@ -9,7 +9,7 @@ Uses the Helipod API key `HELIPOD_API_KEY` with **Email API** enabled (Settings 
 
 ## Set up
 
-1. `email_status`: the project needs an email plan (the Free plan is fine for testing). A paid plan renews from the wallet when it ends; `set_email_auto_renew` turns that on or off.
+1. `email_status`: the project needs an email plan (the Free plan is fine for testing). A paid plan renews from the wallet when it ends; `set_email_auto_renew` turns that on or off. Over the monthly quota, sends stop (`402 PAYG_DISABLED`) unless pay-as-you-go is on (`set_email_payg`, off by default; it buys blocks of 100 emails from the wallet).
 2. `add_email_domain` with the domain to send from (often a subdomain like `mail.example.com`). Domain on Helipod: `list_domain_email_records` then `add_domain_email_records` puts every record in place in one call. Elsewhere: give the user the DNS records from the response exactly as listed (copy them verbatim).
 3. `verify_email_domain` until it is verified.
 

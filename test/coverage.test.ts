@@ -36,6 +36,9 @@ describe("audit additions", () => {
         expect(last(api).body).toEqual({ enabled: true });
         const bad = await c.callTool({ name: "set_email_auto_renew", arguments: { projectId: U, autoRenew: "no" } });
         expect(bad.isError).toBe(true);
+        await c.callTool({ name: "set_email_payg", arguments: { projectId: U, paygEnabled: true } });
+        expect(last(api).url.href).toStartWith("https://mail.helipod.io/api/email/plan/payg");
+        expect(last(api).body).toEqual({ enabled: true });
     });
     test("domains: auto-renew, child nameserver, registrant, premium, prices filters, WHOIS dry run", async () => {
         const api = fakeApi(); const c = await connect(api.f);

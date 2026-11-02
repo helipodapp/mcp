@@ -24,7 +24,7 @@ Follow the `helipod` skill rules. The reseller's wallet pays for everything; set
 - New domain: `register_domain` with `registrant` = the customer's details (only details the customer gave you). `.id` family only (`.id`, `.my.id`, `.web.id`, `.biz.id`, `.ai.id`); other extensions use the reseller account's owner details (`400 REGISTRANT_NOT_SUPPORTED` if you send one).
 - Transfer in: `transfer_domain` with the auth code and `registrant`: the owner is set when the transfer completes (`ownerPending: true` until then; it is checked again automatically).
 - A domain already on the account: `set_domain_owner`. Free.
-- Renewal is charged to your wallet: `set_domain_auto_renew` per domain to match what the customer paid for. The same for each customer project's email plan: `set_email_auto_renew` (off when the customer stops paying; `get_email_plan` / `email_status` show `autoRenew`), and `set_vps_auto_renew` per server.
+- Renewal is charged to your wallet: `set_domain_auto_renew` per domain to match what the customer paid for. The same for each customer project's email plan: `set_email_auto_renew` (off when the customer stops paying; `get_email_plan` / `email_status` show `autoRenew`), and `set_vps_auto_renew` per server. Sends over an email plan's quota are charged only with `set_email_payg` on (off by default): leave it off unless the customer pays for overage.
 
 ## Servers and apps per customer
 

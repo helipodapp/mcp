@@ -36452,6 +36452,15 @@ var emailTools = [
     run: (a, api2) => api2.email("POST", "/plan/auto-renew", { project: a.projectId, body: { enabled: a.autoRenew } })
   }),
   defineTool({
+    name: "set_email_payg",
+    title: "Set email pay-as-you-go",
+    kind: "write",
+    idempotent: true,
+    description: "Turn pay-as-you-go on or off for the active paid email plan (sets the value, safe to repeat; off by default). Off: once the monthly quota is used, sends stop with 402 PAYG_DISABLED and nothing is charged. On: sends continue past the quota and blocks of 100 emails are bought from the wallet deposit at the plan's per-email price (unused ones refunded if the plan is not renewed). email_status shows it as paygEnabled. No effect on the free plan.",
+    input: { projectId, paygEnabled: exports_external.boolean() },
+    run: (a, api2) => api2.email("POST", "/plan/payg", { project: a.projectId, body: { enabled: a.paygEnabled } })
+  }),
+  defineTool({
     name: "send_email",
     title: "Send email",
     kind: "write",
@@ -37801,7 +37810,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.15";
+var VERSION = "0.5.16";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.

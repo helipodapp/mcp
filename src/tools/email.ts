@@ -100,6 +100,12 @@ export const emailTools = [
         run: (a, api) => api.email("POST", "/plan/auto-renew", { project: a.projectId, body: { enabled: a.autoRenew } }),
     }),
     defineTool({
+        name: "set_email_payg", title: "Set email pay-as-you-go", kind: "write", idempotent: true,
+        description: "Turn pay-as-you-go on or off for the active paid email plan (sets the value, safe to repeat; off by default). Off: once the monthly quota is used, sends stop with 402 PAYG_DISABLED and nothing is charged. On: sends continue past the quota and blocks of 100 emails are bought from the wallet deposit at the plan's per-email price (unused ones refunded if the plan is not renewed). email_status shows it as paygEnabled. No effect on the free plan.",
+        input: { projectId, paygEnabled: z.boolean() },
+        run: (a, api) => api.email("POST", "/plan/payg", { project: a.projectId, body: { enabled: a.paygEnabled } }),
+    }),
+    defineTool({
         name: "send_email", title: "Send email", kind: "write",
         description: "Send one email from a verified domain of the project (counts against the plan's quota). Use templateId + templateData, or subject + html/text. Pass an idempotencyKey when retrying.",
         input: {
