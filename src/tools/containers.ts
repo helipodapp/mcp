@@ -93,7 +93,7 @@ export const containerTools = [
     }),
     defineTool({
         name: "list_services", title: "List services", kind: "read",
-        description: "Services (containers) in an environment: status, source, resources, domains, latest deployment and daily cost.",
+        description: "Services (containers) in an environment: status, source, resources, domains, latest deployment and daily cost. Status awaiting_payment = a deploy was refused because the wallet could not pay: top up or buy a bundle (get_bundle), then deploy_service again; nothing is lost.",
         input: { environmentId: id("Environment") },
         run: (a, api) => api.api("GET", `${C}/environments/${a.environmentId}/services`),
     }),
@@ -167,7 +167,7 @@ export const containerTools = [
     }),
     defineTool({
         name: "update_service", title: "Update / rename service", kind: "write", idempotent: true,
-        description: "Rename a service or change its start command, root directory, health check or startup dependencies. Settings apply on the next deploy (needsRedeploy). Renaming breaks references like ${{oldName.KEY}} in other services' variables: the response lists them in warnings.",
+        description: "Rename a service or change its start command, root directory, health check or startup dependencies. Settings apply on the next deploy (needsRedeploy). Renaming rewrites references like ${{oldName.KEY}} in the environment's service variables to the new name (applied on their next deploy); project shared variables are not rewritten and are listed in warnings.",
         input: {
             serviceId: id("Service"),
             name: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,39}$/).optional().describe("New service name (letters, digits, _ -; starts with a letter; unique in the environment)"),

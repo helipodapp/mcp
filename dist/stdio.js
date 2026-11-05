@@ -35106,7 +35106,7 @@ var containerTools = [
     name: "list_services",
     title: "List services",
     kind: "read",
-    description: "Services (containers) in an environment: status, source, resources, domains, latest deployment and daily cost.",
+    description: "Services (containers) in an environment: status, source, resources, domains, latest deployment and daily cost. Status awaiting_payment = a deploy was refused because the wallet could not pay: top up or buy a bundle (get_bundle), then deploy_service again; nothing is lost.",
     input: { environmentId: id("Environment") },
     run: (a, api2) => api2.api("GET", `${C}/environments/${a.environmentId}/services`)
   }),
@@ -35203,7 +35203,7 @@ var containerTools = [
     title: "Update / rename service",
     kind: "write",
     idempotent: true,
-    description: "Rename a service or change its start command, root directory, health check or startup dependencies. Settings apply on the next deploy (needsRedeploy). Renaming breaks references like ${{oldName.KEY}} in other services' variables: the response lists them in warnings.",
+    description: "Rename a service or change its start command, root directory, health check or startup dependencies. Settings apply on the next deploy (needsRedeploy). Renaming rewrites references like ${{oldName.KEY}} in the environment's service variables to the new name (applied on their next deploy); project shared variables are not rewritten and are listed in warnings.",
     input: {
       serviceId: id("Service"),
       name: exports_external.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,39}$/).optional().describe("New service name (letters, digits, _ -; starts with a letter; unique in the environment)"),
@@ -37810,7 +37810,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.16";
+var VERSION = "0.5.17";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
