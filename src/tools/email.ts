@@ -161,15 +161,18 @@ export const emailTools = [
     }),
     defineTool({
         name: "list_email_keys", title: "List email keys", kind: "read",
-        description: "Email API keys of a project (name, prefix, last used, expiry; never the key itself). Needs a Helipod API key with the Email API: an email key or a sign-in token answers 403 KEY_NOT_ALLOWED.",
+        description: "Email API keys of a project (name, prefix, access full or send, last used, expiry; never the key itself). Needs a Helipod API key with the Email API: an email key or a sign-in token answers 403 KEY_NOT_ALLOWED.",
         input: { projectId },
         run: (a, api) => api.emailWithAccountKey("GET", "/keys", { project: a.projectId }),
     }),
     defineTool({
         name: "create_email_key", title: "Create email key", kind: "write",
-        description: "Make an email API key for a project, e.g. one per customer of a reseller. The key works on the Email API and as the SMTP password (smtp.helipod.io, username apikey) for that project only, and cannot make keys itself. The full key is in the answer ONCE: give it to the user to store; it cannot be shown again. Needs a Helipod API key with the Email API (an email key or a sign-in token answers 403 KEY_NOT_ALLOWED). Per project: 5 active keys on Free/Starter, 10 on Pro, 50 on Business.",
-        input: { projectId, name: z.string().min(1).max(100).describe("To tell keys apart, e.g. the customer's name"), expiresInDays: z.number().int().min(1).max(3650).optional() },
-        run: (a, api) => api.emailWithAccountKey("POST", "/keys", { project: a.projectId, body: { name: a.name, expiresInDays: a.expiresInDays } }),
+        description: "Make an email API key for a project, e.g. one per customer of a reseller. The key works on the Email API and as the SMTP password (smtp.helipod.io, username apikey) for that project only, and cannot make keys itself. The full key is in the answer ONCE: give it to the user to store; it cannot be shown again. Needs a Helipod API key with the Email API (an email key or a sign-in token answers 403 KEY_NOT_ALLOWED). Per project: 5 active keys on Free/Starter, 10 on Pro, 50 on Business. access=\"send\" makes a send-only key (POST /send, /send/batch, SMTP and reading sent mail; everything else, plans included, answers 403 KEY_SEND_ONLY): give that one to a customer who only needs SMTP, so it can never buy or renew plans from the wallet.",
+        input: {
+            projectId, name: z.string().min(1).max(100).describe("To tell keys apart, e.g. the customer's name"), expiresInDays: z.number().int().min(1).max(3650).optional(),
+            access: z.enum(["full", "send"]).optional().describe("full (default): everything the project allows. send: only sending and reading sent mail"),
+        },
+        run: (a, api) => api.emailWithAccountKey("POST", "/keys", { project: a.projectId, body: { name: a.name, expiresInDays: a.expiresInDays, ...(a.access ? { access: a.access } : {}) } }),
     }),
     defineTool({
         name: "revoke_email_key", title: "Revoke email key", kind: "destructive",

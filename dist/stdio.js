@@ -36537,7 +36537,7 @@ var emailTools = [
     name: "list_email_keys",
     title: "List email keys",
     kind: "read",
-    description: "Email API keys of a project (name, prefix, last used, expiry; never the key itself). Needs a Helipod API key with the Email API: an email key or a sign-in token answers 403 KEY_NOT_ALLOWED.",
+    description: "Email API keys of a project (name, prefix, access full or send, last used, expiry; never the key itself). Needs a Helipod API key with the Email API: an email key or a sign-in token answers 403 KEY_NOT_ALLOWED.",
     input: { projectId },
     run: (a, api2) => api2.emailWithAccountKey("GET", "/keys", { project: a.projectId })
   }),
@@ -36545,9 +36545,14 @@ var emailTools = [
     name: "create_email_key",
     title: "Create email key",
     kind: "write",
-    description: "Make an email API key for a project, e.g. one per customer of a reseller. The key works on the Email API and as the SMTP password (smtp.helipod.io, username apikey) for that project only, and cannot make keys itself. The full key is in the answer ONCE: give it to the user to store; it cannot be shown again. Needs a Helipod API key with the Email API (an email key or a sign-in token answers 403 KEY_NOT_ALLOWED). Per project: 5 active keys on Free/Starter, 10 on Pro, 50 on Business.",
-    input: { projectId, name: exports_external.string().min(1).max(100).describe("To tell keys apart, e.g. the customer's name"), expiresInDays: exports_external.number().int().min(1).max(3650).optional() },
-    run: (a, api2) => api2.emailWithAccountKey("POST", "/keys", { project: a.projectId, body: { name: a.name, expiresInDays: a.expiresInDays } })
+    description: 'Make an email API key for a project, e.g. one per customer of a reseller. The key works on the Email API and as the SMTP password (smtp.helipod.io, username apikey) for that project only, and cannot make keys itself. The full key is in the answer ONCE: give it to the user to store; it cannot be shown again. Needs a Helipod API key with the Email API (an email key or a sign-in token answers 403 KEY_NOT_ALLOWED). Per project: 5 active keys on Free/Starter, 10 on Pro, 50 on Business. access="send" makes a send-only key (POST /send, /send/batch, SMTP and reading sent mail; everything else, plans included, answers 403 KEY_SEND_ONLY): give that one to a customer who only needs SMTP, so it can never buy or renew plans from the wallet.',
+    input: {
+      projectId,
+      name: exports_external.string().min(1).max(100).describe("To tell keys apart, e.g. the customer's name"),
+      expiresInDays: exports_external.number().int().min(1).max(3650).optional(),
+      access: exports_external.enum(["full", "send"]).optional().describe("full (default): everything the project allows. send: only sending and reading sent mail")
+    },
+    run: (a, api2) => api2.emailWithAccountKey("POST", "/keys", { project: a.projectId, body: { name: a.name, expiresInDays: a.expiresInDays, ...a.access ? { access: a.access } : {} } })
   }),
   defineTool({
     name: "revoke_email_key",
@@ -37810,7 +37815,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.17";
+var VERSION = "0.5.18";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.
@@ -37819,7 +37824,7 @@ var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed
 - Deploying an app, step by step: list_projects (pick the project and its production environmentId) -> get_bundle (is it covered?) -> if it needs Postgres: create_database, then get_database_connection and store DATABASE_URL with set_variables (secrets) after the service exists, or pass it in create_service variables -> create_service with dryRun=true (repo or image, port, variables) -> tell the user the cost (included in the bundle, or walletDailyCost per day) and wait for their OK -> create_service for real -> poll get_deployment until it settles, read get_deployment_logs if it failed -> give the user the *.helipod.app URL from get_service. Ask the user for secrets (API keys) only when the app needs them; never invent values.
 - Destructive tools (delete, terminate, reinstall, rollback, restore a backup or an import, copy a backup onto another VPS, replace DNS, revoke a key, remove an SSH key or port forward, send a broadcast, execute_database_sql): confirm with the user and name what will be lost. Before execute_database_sql, run classify_database_sql.
 - Email: when a project has no email yet (email_status shows activated false) or its plan ended, start it with buy_email_plan (dryRun first; the FREE plan costs nothing, still confirm). That also sets email up for the project; then add and verify a sending domain.
-- Email keys: create_email_key gives an app or a customer its own key (also its SMTP password: smtp.helipod.io, username apikey); the full key is shown once, so hand it over and never print it again. Domain on Helipod: add_domain_email_records puts the sending domain's DNS records in place in one call.
+- Email keys: create_email_key gives an app or a customer its own key (also its SMTP password: smtp.helipod.io, username apikey); the full key is shown once, so hand it over and never print it again. A customer who only sends gets access "send": that key cannot touch plans or anything that costs money. Domain on Helipod: add_domain_email_records puts the sending domain's DNS records in place in one call.
 - Domains for someone else (resellers): register_domain and transfer_domain take registrant (.id only; a transfer gets the owner when it completes), set_domain_owner changes it later. Use only details the user gave.
 - Before replacing all DNS records (set_dns_records), read list_dns_records and keep every record the user still needs. Before sending or scheduling a broadcast, tell the user how many contacts it reaches. Before deleting or replacing code, files or variables, read the current value. After renaming a service, fix the variable references listed in warnings.
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.

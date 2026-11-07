@@ -15,7 +15,7 @@ Follow the `helipod` skill rules. The reseller's wallet pays for everything; set
 ## Email per customer
 
 1. `buy_email_plan` for the customer's project (FREE first, `dryRun`), `add_email_domain` with the customer's domain, the DNS records (`add_domain_email_records` when the domain is on Helipod, else give them to the customer), `verify_email_domain`.
-2. `create_email_key` with the customer's name → the key is shown ONCE: hand it to the customer (or store it encrypted on your side). It works for that project only, on the Email API and as the SMTP password (`smtp.helipod.io`, port 587 STARTTLS or 465, username `apikey`). It cannot make other keys.
+2. `create_email_key` with the customer's name → the key is shown ONCE: hand it to the customer (or store it encrypted on your side). It works for that project only, on the Email API and as the SMTP password (`smtp.helipod.io`, port 587 STARTTLS or 465, username `apikey`). It cannot make other keys. Pass `access: "send"` for a customer who only needs SMTP / sending: that key answers 403 KEY_SEND_ONLY on everything else (plans, renewals, domains, contacts), so it can never spend your wallet.
 3. `list_email_keys`, `revoke_email_key` when a customer leaves or a key leaks. Allowance per project: 5 keys (Free/Starter), 10 (Pro), 50 (Business).
 4. Managing keys needs the Helipod API key itself: an email key or an AI-tool sign-in answers `403 KEY_NOT_ALLOWED`.
 

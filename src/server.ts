@@ -14,7 +14,7 @@ import { accountTools } from "./tools/account.js";
 import { aiTools } from "./tools/ai.js";
 import { generalTools } from "./tools/general.js";
 
-export const VERSION = "0.5.17";
+export const VERSION = "0.5.18";
 
 export const INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
@@ -24,7 +24,7 @@ export const INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers
 - Deploying an app, step by step: list_projects (pick the project and its production environmentId) -> get_bundle (is it covered?) -> if it needs Postgres: create_database, then get_database_connection and store DATABASE_URL with set_variables (secrets) after the service exists, or pass it in create_service variables -> create_service with dryRun=true (repo or image, port, variables) -> tell the user the cost (included in the bundle, or walletDailyCost per day) and wait for their OK -> create_service for real -> poll get_deployment until it settles, read get_deployment_logs if it failed -> give the user the *.helipod.app URL from get_service. Ask the user for secrets (API keys) only when the app needs them; never invent values.
 - Destructive tools (delete, terminate, reinstall, rollback, restore a backup or an import, copy a backup onto another VPS, replace DNS, revoke a key, remove an SSH key or port forward, send a broadcast, execute_database_sql): confirm with the user and name what will be lost. Before execute_database_sql, run classify_database_sql.
 - Email: when a project has no email yet (email_status shows activated false) or its plan ended, start it with buy_email_plan (dryRun first; the FREE plan costs nothing, still confirm). That also sets email up for the project; then add and verify a sending domain.
-- Email keys: create_email_key gives an app or a customer its own key (also its SMTP password: smtp.helipod.io, username apikey); the full key is shown once, so hand it over and never print it again. Domain on Helipod: add_domain_email_records puts the sending domain's DNS records in place in one call.
+- Email keys: create_email_key gives an app or a customer its own key (also its SMTP password: smtp.helipod.io, username apikey); the full key is shown once, so hand it over and never print it again. A customer who only sends gets access "send": that key cannot touch plans or anything that costs money. Domain on Helipod: add_domain_email_records puts the sending domain's DNS records in place in one call.
 - Domains for someone else (resellers): register_domain and transfer_domain take registrant (.id only; a transfer gets the owner when it completes), set_domain_owner changes it later. Use only details the user gave.
 - Before replacing all DNS records (set_dns_records), read list_dns_records and keep every record the user still needs. Before sending or scheduling a broadcast, tell the user how many contacts it reaches. Before deleting or replacing code, files or variables, read the current value. After renaming a service, fix the variable references listed in warnings.
 - Databases: get_database_connection returns a password; put it in a secret variable (DATABASE_URL) instead of code or chat.
