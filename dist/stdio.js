@@ -37458,6 +37458,26 @@ var accountTools = [
     run: (a, api2) => api2.api("GET", "/account/wallet/transactions", { query: { limit: a.limit, offset: a.offset } })
   }),
   defineTool({
+    name: "get_low_balance_alert",
+    title: "Get low balance alert",
+    kind: "read",
+    description: `The account's low balance email alert for the wallet deposit balance: enabled, threshold (IDR; null when never set), minimumThreshold (50000) and lastAlertAt. Off by default. ${ACCOUNT_KEY}`,
+    input: {},
+    run: (_a3, api2) => api2.api("GET", "/account/wallet/low-balance-alert")
+  }),
+  defineTool({
+    name: "set_low_balance_alert",
+    title: "Set low balance alert",
+    kind: "write",
+    idempotent: true,
+    description: `Turn the low balance email on or off and/or set its threshold (whole IDR, at least 50000; there is no default, so turning it on needs one, now or set before: 400 THRESHOLD_REQUIRED / THRESHOLD_TOO_LOW). When on, the account owner gets an email when a charge leaves the deposit balance below the threshold, at most once a day while it stays below; money added (a top-up) resets that. If the balance is already below the threshold when it is turned on, one email goes out at once. Turning it off keeps the threshold. Nothing is charged. ${ACCOUNT_KEY}`,
+    input: {
+      enabled: exports_external.boolean().optional().describe("true = on, false = off; omit to keep"),
+      threshold: exports_external.number().int().min(50000).max(1e9).optional().describe("Email when the deposit balance falls below this many IDR (at least 50000)")
+    },
+    run: (a, api2) => api2.api("PUT", "/account/wallet/low-balance-alert", { body: { enabled: a.enabled, threshold: a.threshold } })
+  }),
+  defineTool({
     name: "create_deposit",
     title: "Create deposit (top-up)",
     kind: "write",
@@ -37815,7 +37835,7 @@ var generalTools = [
 ];
 
 // src/server.ts
-var VERSION = "0.5.18";
+var VERSION = "0.5.19";
 var INSTRUCTIONS = `Helipod is a cloud platform (Indonesia): containers, managed Postgres databases, VPS, domains, email and an AI gateway, billed from a prepaid wallet in Rupiah.
 - Start with list_projects to find projects and environment ids. Account tools (get_wallet, invoices, statements, notifications, get_project_activity, support tickets) cover the account; AI tools (list_ai_models, get_ai_overview, get_ai_usage, AI keys, top-ups, generate_ai_image) cover the AI gateway.
 - Anything that costs money (create/deploy/scale services, resize volumes, upgrade a database plan, create/renew/upgrade VPS, VPS backups, register/renew/transfer domains, email plans and inbox add-ons, AI top-ups and auto top-up, generating images): call it with dryRun=true first (or the price lookup when it has no dry run), tell the user the cost in IDR and the wallet balance after, and wait for an explicit yes before the real call. Never treat silence or an earlier general OK as a yes.

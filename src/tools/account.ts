@@ -22,6 +22,21 @@ export const accountTools = [
         run: (a, api) => api.api("GET", "/account/wallet/transactions", { query: { limit: a.limit, offset: a.offset } }),
     }),
     defineTool({
+        name: "get_low_balance_alert", title: "Get low balance alert", kind: "read",
+        description: `The account's low balance email alert for the wallet deposit balance: enabled, threshold (IDR; null when never set), minimumThreshold (50000) and lastAlertAt. Off by default. ${ACCOUNT_KEY}`,
+        input: {},
+        run: (_a, api) => api.api("GET", "/account/wallet/low-balance-alert"),
+    }),
+    defineTool({
+        name: "set_low_balance_alert", title: "Set low balance alert", kind: "write", idempotent: true,
+        description: `Turn the low balance email on or off and/or set its threshold (whole IDR, at least 50000; there is no default, so turning it on needs one, now or set before: 400 THRESHOLD_REQUIRED / THRESHOLD_TOO_LOW). When on, the account owner gets an email when a charge leaves the deposit balance below the threshold, at most once a day while it stays below; money added (a top-up) resets that. If the balance is already below the threshold when it is turned on, one email goes out at once. Turning it off keeps the threshold. Nothing is charged. ${ACCOUNT_KEY}`,
+        input: {
+            enabled: z.boolean().optional().describe("true = on, false = off; omit to keep"),
+            threshold: z.number().int().min(50000).max(1000000000).optional().describe("Email when the deposit balance falls below this many IDR (at least 50000)"),
+        },
+        run: (a, api) => api.api("PUT", "/account/wallet/low-balance-alert", { body: { enabled: a.enabled, threshold: a.threshold } }),
+    }),
+    defineTool({
         name: "create_deposit", title: "Create deposit (top-up)", kind: "write",
         description: `Create a wallet top-up of amount IDR (whole number, 10000-50000000) and its payment link. Nothing is charged: give the user paymentUrl to pay (QRIS or bank virtual account, listed in paymentMethods; the link lasts 3 hours); never try to pay it yourself. Limits: one unpaid deposit at a time (409 DEPOSIT_PENDING: details.deposit is the unpaid one, send its paymentUrl instead), 10 minutes between deposits (429 DEPOSIT_COOLDOWN, details.nextAllowedAt), 10 a day (429 DEPOSIT_DAILY_LIMIT). dryRun=true creates nothing and says whether it would be accepted now. Then follow it with get_deposit. ${ACCOUNT_KEY}`,
         input: {
